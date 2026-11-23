@@ -93,6 +93,72 @@ function plantaEsquina(E, k, st, r, tipos = ['ficus', 'monstera', 'olivo'], n = 
 // =====================================================================================================
 // SALÓN-COMEDOR
 // =====================================================================================================
+const anchosSofa = w => [w, 2.0, 1.8, 1.6].filter((v, i, l) => v <= w + 1e-6 && l.indexOf(v) === i);
+// Mesa de comedor en cualquier sitio libre de la estancia, lo más cerca posible de `c` (rejilla de 10 cm).
+function comedorEnRejilla(E, st, c) {
+  const formas = st.mesa === 'redonda' ? [['redonda', 1.1, 1.1, 0, false], ['redonda', 0.95, 0.95, 0, false]] : [];
+  formas.push(['rect', 1.6, 0.9, 2, true], ['rect', 1.4, 0.85, 2, false], ['rect', 1.2, 0.8, 2, false], ['redonda', 0.9, 0.9, 0, false]);
+  const { x0, x1, z0, z1 } = E.caja;
+  for (const [forma, mw, md, npl, cab] of formas) {
+    let mejor = null, dMejor = Infinity;
+    const red = forma === 'redonda';
+    const hl = red || cab ? 0.62 : 0.15;                     // holgura en las cabeceras (lado corto)
+    for (const dir of [[1, 0], [0, 1]]) {
+      const ex = dir[0] ? mw / 2 + hl : md / 2 + 0.62, ez = dir[0] ? md / 2 + 0.62 : mw / 2 + hl;
+      for (let x = x0 + ex; x <= x1 - ex + 1e-6; x += 0.1) for (let z = z0 + ez; z <= z1 - ez + 1e-6; z += 0.1) {
+        const d = Math.hypot(x - c[0], z - c[1]);
+        if (d >= dMejor) continue;
+        const rS = { x0: x - ex, x1: x + ex, z0: z - ez, z1: z + ez };
+        if (!E.libre(rS, 0.85)) continue;
+        dMejor = d; mejor = { tipo: 'comedor', forma, w: mw, d: md, npl, cab, o: [x, z], dir, rS };
+      }
+    }
+    if (mejor) return mejor;
+  }
+  return null;
+}
+// Reserva: si ninguna variante cabe, sofá contra la pared libre más larga, mesa delante, tele enfrente si se puede
+// (aunque no quede centrada) y comedor donde quepa. Un salón nunca se queda sin sofá.
+function salonReserva(E, st) {
+  const items = [];
+  let sf = null;
+  for (const an of [2.2, 2.0, 1.8, 1.6]) {
+    for (const w of [...E.paredes].sort((a, b) => b.largo - a.largo)) {
+      const c = E.buscarEnPared(w, an, 0.9, 0.86, { frente: 1.2 });
+      if (c) { sf = { ...c, an }; break; }
+    }
+    if (sf) break;
+  }
+  if (!sf) return null;
+  E.ocupar(sf.r, 'sofa', 0.86);
+  const o = puntoPared(sf.w, sf.s), dir = sf.w.dir;
+  items.push({ tipo: 'sofa', o, dir, ancho: sf.an, pegado: true });
+  const mesaD = st.id === 'nordico' ? 0.84 : 0.6, mesaW = st.id === 'nordico' ? 0.84 : st.id === 'clasico' ? 1.0 : 1.1;
+  const zMesa = 0.9 + 0.42 + mesaD / 2;
+  const rMesa = rectMarco(o, dir, -mesaW / 2, mesaW / 2, zMesa - mesaD / 2, zMesa + mesaD / 2);
+  if (E.libre(rMesa, 0.45)) { E.ocupar(rMesa, 'mesa', 0.45); items.push({ tipo: 'mesa', o, dir, x: 0, z: zMesa }); }
+  const aw = Math.min(sf.an + 0.4, 2.4), az1 = zMesa + mesaD / 2 + 0.5;
+  if (alfombraLibre(E, rectMarco(o, dir, -aw / 2, aw / 2, 0.45, az1))) items.push({ tipo: 'alfombra', o, dir, w: aw, z0: 0.45, z1: az1 });
+  // tele en la pared de enfrente (paralela)
+  const n = sf.w.n;
+  const wOp = E.paredes.find(w => Math.abs(w.n[0] + n[0]) < 1e-3 && Math.abs(w.n[1] + n[1]) < 1e-3);
+  if (wOp) {
+    const pref = (o[0] - wOp.a[0]) * wOp.dir[0] + (o[1] - wOp.a[1]) * wOp.dir[1];
+    for (const an of [1.8, 1.6, 1.4]) {
+      const tv = E.buscarEnPared(wOp, an, 0.42, 1.4, { pref, frente: 1.0 });
+      if (tv && Math.abs(tv.s - pref) < 1.2) {
+        E.ocupar(tv.r, 'tv', 1.4); items.push({ tipo: 'tv', o: puntoPared(wOp, tv.s), dir: wOp.dir, ancho: an });
+        const gap = (puntoPared(wOp, tv.s)[0] - o[0]) * n[0] + (puntoPared(wOp, tv.s)[1] - o[1]) * n[1];
+        E.ocupar(rectMarco(o, dir, -sf.an / 2, sf.an / 2, 0.9, gap - 0.42), 'vista', 0);
+        break;
+      }
+    }
+  }
+  const g = comedorEnRejilla(E, st, [(E.caja.x0 + E.caja.x1) / 2, (E.caja.z0 + E.caja.z1) / 2]);
+  if (g) { E.ocupar(g.rS, 'comedor', 1.0); items.push(g); }
+  return { score: -10, items, V: { reserva: true } };
+}
+
 // Una variante: zona de estar (TV + sofá enfrentados) y, si cabe, zona de comedor al otro extremo del eje largo.
 function planearSalon(E, st, completo) {
   const { x0, x1, z0, z1 } = E.caja, W = x1 - x0, D = z1 - z0;
@@ -100,9 +166,10 @@ function planearSalon(E, st, completo) {
   for (const eje of ['x', 'z']) {
     const Lg = eje === 'x' ? W : D, A = eje === 'x' ? D : W;
     const zonas = [];
-    if (Lg >= 4.5 && A >= 2.6) {
-      const lv = Math.min(3.9, Math.max(2.7, Lg - 2.3));
-      zonas.push({ estar: [0, lv], comer: [lv, Lg] }, { estar: [Lg - lv, Lg], comer: [0, Lg - lv] });
+    if (Lg >= 4.3 && A >= 2.6) {
+      // varios cortes estar | comedor (el comedor necesita 1,6 m como poco)
+      const cortes = new Set([Lg - 2.3, Lg - 2.0, Lg - 1.7].map(v => Math.round(Math.min(3.9, Math.max(2.7, v)) * 100) / 100).filter(v => Lg - v >= 1.6));
+      for (const lv of cortes) zonas.push({ estar: [0, lv], comer: [lv, Lg] }, { estar: [Lg - lv, Lg], comer: [0, Lg - lv] });
     }
     zonas.push({ estar: [0, Lg], comer: null });
     for (const z of zonas) for (const plantilla of ['lados', 'ladosB', 'fondo']) variantes.push({ eje, Lg, A, ...z, plantilla });
@@ -117,6 +184,7 @@ function planearSalon(E, st, completo) {
     E.piezas.length = marca;
     if (plan && plan.score > mejor.score) { mejor.score = plan.score; mejor.plan = plan; }
   }
+  if (!mejor.plan) { const marca = E.piezas.length; mejor.plan = salonReserva(E, st); E.piezas.length = marca; }
   return mejor.plan;
 }
 
@@ -150,7 +218,7 @@ function probarVariante(E, st, completo, V, aLocal, dirU) {
       // el sofá, enfrente de la tele; si no cabe ahí, la tele se mueve a su eje
       const sEn = (w, p) => (p[0] - w.a[0]) * w.dir[0] + (p[1] - w.a[1]) * w.dir[1];
       const cTv = puntoPared(tv.w, tv.s);
-      sf = E.buscarEnPared(wSf, sofaW, 0.9, 0.86, { pref: sEn(wSf, cTv), frente: 0.3 });
+      for (const an of anchosSofa(sofaW)) { sf = E.buscarEnPared(wSf, an, 0.9, 0.86, { pref: sEn(wSf, cTv), frente: 0.3 }); if (sf) { sofaW = an; break; } }
       if (!sf) return fallo(6);
       if (Math.abs(sEn(wSf, cTv) - sf.s) > 0.3) {
         E.piezas = E.piezas.filter(q => q.tipo !== 'tv');
@@ -173,7 +241,7 @@ function probarVariante(E, st, completo, V, aLocal, dirU) {
     if (!enU0 && !enUL) return fallo(7);
     const ext = enU0 && enUL ? (V.comer ? null : 'u0') : enU0 ? 'u0' : 'uL';
     if (!ext) return fallo(8);
-    if (lv < 3.1 || A < 2.6) return fallo(9);
+    if (lv < 3.2 || A < 2.6) return fallo(9);
     const wTv = paredCon(E, ext === 'u0' ? nU0 : nUL);
     if (!wTv) return fallo(10);
     tv = E.buscarEnPared(wTv, wTVancho, 0.42, 1.4, { pref: sDe(wTv, ext === 'u0' ? 0 : V.Lg, A / 2), frente: 1.2 });
@@ -189,7 +257,8 @@ function probarVariante(E, st, completo, V, aLocal, dirU) {
     if (pegado) {
       // frente a la tele
       const tc = [(tv.r.x0 + tv.r.x1) / 2, (tv.r.z0 + tv.r.z1) / 2];
-      sf = E.buscarEnPared(wOp, sofaW, 0.9, 0.86, { pref: (tc[0] - wOp.a[0]) * wOp.dir[0] + (tc[1] - wOp.a[1]) * wOp.dir[1], frente: 0.3 });
+      const pref = (tc[0] - wOp.a[0]) * wOp.dir[0] + (tc[1] - wOp.a[1]) * wOp.dir[1];
+      for (const an of anchosSofa(sofaW)) { sf = E.buscarEnPared(wOp, an, 0.9, 0.86, { pref, frente: 0.3 }); if (sf && Math.abs(sf.s - pref) <= 0.5) { sofaW = an; break; } sf = null; }
       if (!sf) return fallo(14);
       sofaPared = wOp;
     } else {
@@ -201,15 +270,29 @@ function probarVariante(E, st, completo, V, aLocal, dirU) {
     }
     score -= 0.3;
   }
-  // sofá exento: comprobar huella
+  // sofá exento: se busca la huella libre más centrada (ancho y desplazamiento) y la tele le sigue
   if (sofaO) {
-    const r = rectMarco(sofaO, sofaDir, -sofaW / 2, sofaW / 2, 0, 0.9);
-    if (!E.libre(r, 0.86)) return fallo(15);
-    // y que quede paso detrás (si no da a la zona de comedor, al menos 0,7 hasta lo que haya)
-    const detras = rectMarco(sofaO, sofaDir, -sofaW / 2, sofaW / 2, -0.7, 0);
-    if (!E.dentro(detras)) return fallo(16);
-    E.ocupar(r, 'sofa', 0.86);
-    sf = { r, o: sofaO, dir: sofaDir };
+    let hecho = null;
+    buscar: for (const an of anchosSofa(sofaW)) for (const dx of [0, 0.15, -0.15, 0.3, -0.3, 0.45, -0.45, 0.6, -0.6]) {
+      const o = ptoEn(sofaO, sofaDir, dx, 0);
+      const r = rectMarco(o, sofaDir, -an / 2, an / 2, 0, 0.9);
+      if (!E.libre(r, 0.86)) continue;
+      // y que quede paso detrás
+      if (!E.dentro(rectMarco(o, sofaDir, -an / 2, an / 2, -0.7, 0))) continue;
+      hecho = { r, o, an, dx }; break buscar;
+    }
+    if (!hecho) return fallo(15);
+    sofaW = hecho.an;
+    if (Math.abs(hecho.dx) > 0.05) {
+      const sEn = (w, p) => (p[0] - w.a[0]) * w.dir[0] + (p[1] - w.a[1]) * w.dir[1];
+      const wTv = tv.w, pref = sEn(wTv, hecho.o);
+      E.piezas = E.piezas.filter(q => q.tipo !== 'tv');
+      tv = E.buscarEnPared(wTv, wTVancho, 0.42, 1.4, { pref, frente: 1.2 });
+      if (!tv || Math.abs(tv.s - pref) > 0.35 || solapa(tv.r, hecho.r)) return fallo(16);
+      E.ocupar(tv.r, 'tv', 1.4);
+    }
+    E.ocupar(hecho.r, 'sofa', 0.86);
+    sf = { r: hecho.r, o: hecho.o, dir: sofaDir };
   } else E.ocupar(sf.r, 'sofa', 0.86);
   // marco del sofá: o (centro del respaldo) y eje x
   const sofaM = sofaPared ? { o: puntoPared(sofaPared, sf.s), dir: sofaPared.dir } : { o: sf.o, dir: sf.dir };
@@ -234,6 +317,8 @@ function probarVariante(E, st, completo, V, aLocal, dirU) {
   const alf = alfOk() ? { w: alfW, z0: alfZ0, z1: alfZ1 } : null;
   if (alf) score += 0.3;
   items.push({ tipo: 'tv', ...tvM, ancho: wTVancho }, { tipo: 'sofa', ...sofaM, ancho: sofaW, pegado: !!sofaPared }, { tipo: 'mesa', ...sofaM, x: xMesa, z: zMesa }, alf && { tipo: 'alfombra', ...sofaM, ...alf });
+  // la línea de vista sofá → tele queda libre (que el comedor no se meta en medio)
+  E.ocupar(rectMarco(sofaM.o, sofaM.dir, -sofaW / 2, sofaW / 2, 0.9, gap - 0.42), 'vista', 0);
   // ----- comedor -----
   if (V.comer) {
     const [c0, c1] = V.comer, lc = c1 - c0;
@@ -265,17 +350,26 @@ function probarVariante(E, st, completo, V, aLocal, dirU) {
       if (puesto) break;
     }
     if (puesto) { E.ocupar(puesto.rS, 'comedor', 1.0); items.push(puesto); score += 3; }
-    else score -= 1;
+    else {
+      const g = comedorEnRejilla(E, st, aLocal(eje, (c0 + c1) / 2, A / 2));
+      if (g) { E.ocupar(g.rS, 'comedor', 1.0); items.push(g); score += 2; } else score -= 1;
+    }
+  } else if (A * V.Lg >= 15) {
+    // salón-comedor sin zona de comedor separada: la mesa donde quepa
+    const g = comedorEnRejilla(E, st, aLocal(eje, V.Lg / 2, A / 2));
+    if (g) { E.ocupar(g.rS, 'comedor', 1.0); items.push(g); score += 1.5; }
   }
   // preferencias: sofá contra pared mejor que exento; tele no en la pared de la balconera
   if (tieneHueco(tv.w, h => h.tipo === 'balconera')) score -= 0.8;
+  if (sofaW < 2.0) score -= (2.0 - sofaW) * 2;
   if (sofaPared) score += 0.5;
   return { score, items: items.filter(Boolean), V };
 }
 
 export { planearSalon };
 export function salon(E, k, st, r, completo) {
-  const plan = E.rect ? planearSalon(E, st, completo) : null;
+  let plan = E.rect ? planearSalon(E, st, completo) : null;
+  if (!plan) { const marca = E.piezas.length; plan = salonReserva(E, st); E.piezas.length = marca; }
   if (!plan) { plantaEsquina(E, k, st, r, ['ficus', 'monstera'], 2); cortinas(E, k, st); return; }
   // volver a ocupar lo planeado (planear deja las piezas tal cual estaban)
   const H = E.H;
@@ -407,6 +501,18 @@ export function dormitorio(E, k, st, r, completo, principal) {
       if (mejor) break;
     }
     if (mejor) break;
+  }
+  // reserva: un dormitorio nunca se queda sin cama → la más pequeña que quepa, solo con 0,4 libres a los pies
+  if (!mejor) {
+    for (const [cw, cl] of [[1.35, 1.9], [0.9, 1.9]]) {
+      const fw = cw + 0.18, z1 = 0.07 + cl + 0.05;
+      for (const w of E.paredes) for (let s = fw / 2 + 0.02; s <= w.largo - fw / 2 - 0.02 + 1e-6; s += 0.05) {
+        if (!E.libre(rectPared(w, s - fw / 2, s + fw / 2, 0, z1), 0.6) || !E.dentro(rectPared(w, s - fw / 2, s + fw / 2, z1, z1 + 0.4))) continue;
+        const score = -Math.abs(s - w.largo / 2) + cw;
+        if (!mejor || score > mejor.score) mejor = { w, s, cw, cl, fw, z1, score };
+      }
+      if (mejor) break;
+    }
   }
   if (!mejor) { plantaEsquina(E, k, st, r, ['monstera'], 1); cortinas(E, k, st); return; }
   const { w, s, cw, cl, fw, z1 } = mejor;
