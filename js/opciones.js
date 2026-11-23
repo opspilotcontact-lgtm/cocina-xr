@@ -1,6 +1,6 @@
 // Opciones comunes (escritorio y gafas) como datos: grupos de filas que cada interfaz dibuja a su manera.
 // VERSIÓN MÍNIMA de prueba para la rama del panel XR: al fusionar se sustituye por la completa.
-//   grupos(app) → [{ id, titulo, filas }]   (ver el contrato en xr.js)
+//   grupos(app) → [{ id, titulo, filas, ambito, seccion? }]   (ver el contrato en xr.js)
 import { SERIES, ENCIMERAS, TIRADORES, SUELOS, PAREDES, USOS_BAJO, USOS_ALTO, COLUMNAS, ed, moduloEn } from './modelo.js';
 import { estanciaPorId, PINTURAS } from './casa/modelo-casa.js';
 
@@ -19,7 +19,7 @@ export function grupos(app) {
   if (sel && (sel.ambito === 'modulo' || (!sel.ambito && sel.tramo != null)) && moduloEn(st, sel)) {
     const m = () => moduloEn(app.estado, app.seleccion) || {};
     out.push({
-      id: 'modulo', titulo: 'Módulo', filas: [
+      id: 'modulo', ambito: 'seleccion', titulo: 'Módulo', filas: [
         { tipo: 'texto', texto: `Pared ${sel.tramo} · módulo ${sel.idx + 1}` },
         { tipo: 'num', id: 'ancho', label: 'Ancho', valor: () => String(m().ancho), unidad: 'cm', min: 5, max: 150, paso: 5, actual: () => m().ancho, set: n => cambiar(e => { ed.ancho(e, app.seleccion, n); }) },
         ciclo('bajo', 'Abajo', USOS_BAJO, () => m().bajo, v => cambiar(e => { ed.bajo(e, app.seleccion, v); })),
@@ -33,7 +33,7 @@ export function grupos(app) {
   const est = estanciaPorId(app.casa, app.casaSel?.estancia);
   if (est && !est.cocina) {
     out.push({
-      id: 'estancia', titulo: est.nombre, filas: [
+      id: 'estancia', ambito: 'estancia', seccion: 'Estancia', titulo: est.nombre, filas: [
         { tipo: 'texto', texto: est.nombre },
         ciclo('suelo', 'Suelo', SUELOS, () => est.suelo, v => app.cambiarCasa(c => { estanciaPorId(c, est.id).suelo = v; return { estancia: est.id }; })),
         ciclo('pintura', 'Pintura', PINTURAS, () => est.pintura, v => app.cambiarCasa(c => { estanciaPorId(c, est.id).pintura = v; return { estancia: est.id }; })),
@@ -45,7 +45,7 @@ export function grupos(app) {
   if (st) {
     const s = () => app.estado.estilo;
     out.push({
-      id: 'estilo', titulo: 'Estilo', filas: [
+      id: 'estilo', ambito: 'estancia', seccion: 'Acabados', titulo: 'Estilo', filas: [
         { tipo: 'ciclo', id: 'serie', label: 'Frentes', valor: () => `${SERIES[s().serie].nombre} · ${SERIES[s().serie].sub}`, opciones: lista(SERIES, x => x.nombre), actual: () => s().serie, set: v => cambiar(e => { e.estilo.serie = v; }) },
         ciclo('encimera', 'Encimera', ENCIMERAS, () => s().encimera, v => cambiar(e => { e.estilo.encimera = v; })),
         ciclo('tirador', 'Tirador', TIRADORES, () => s().tirador, v => cambiar(e => { e.estilo.tirador = v; })),
@@ -55,8 +55,8 @@ export function grupos(app) {
     });
     const l = () => app.estado.luz;
     out.push({
-      id: 'luz', titulo: 'Luz', filas: [
-        { tipo: 'num', id: 'hora', label: 'Hora', valor: () => { const h = l().hora; return `${Math.floor(h)}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`; }, unidad: 'h', min: 6, max: 23.5, paso: 1, actual: () => l().hora, set: n => app.cambiar(e => { e.luz.hora = n; }, { reconstruir: false }) },
+      id: 'luz', ambito: 'luz', titulo: 'Luz', filas: [
+        { tipo: 'num', id: 'hora', label: 'Hora', valor: () => { const h = l().hora; return `${Math.floor(h)}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`; }, unidad: '', min: 6, max: 23.5, paso: 0.5, deslizador: true, previsualizar: v => { app.estado.luz.hora = v; app.aplicarLuz?.(); }, actual: () => l().hora, set: n => app.cambiar(e => { e.luz.hora = n; }, { reconstruir: false }) },
         { tipo: 'toggle', id: 'led', label: 'LED bajo altos', actual: () => !!l().led, set: b => cambiar(e => { e.luz.led = b; }) },
         { tipo: 'toggle', id: 'techo', label: 'Focos techo', actual: () => !!l().techo, set: b => app.cambiar(e => { e.luz.techo = b; }, { reconstruir: false }) },
         { tipo: 'accion', id: 'deshacer', label: 'Deshacer', fn: () => app.deshacer() },

@@ -134,6 +134,16 @@ export function crearMaqueta({ app, scene, camera, mundo, luces, sombraSuelo, su
     animar(C, aMundo(C), yawQ(ang).multiply(mundo.quaternion), mundo.scale.x, 0.35);
   }
 
+  // el mundo cambió de marco (otra cocina activa): K lleva las coords locales viejas a las nuevas.
+  // xr.js ya recolocó `mundo`; aquí se corrige lo que esté a medias (animación y agarre).
+  function cambioMarco(K) {
+    if (anim) {
+      const qi = new THREE.Quaternion().setFromRotationMatrix(K).invert();
+      anim.P.applyMatrix4(K); anim.q0.multiply(qi); anim.q1.multiply(qi);
+    }
+    if (agarres.size) reiniciarAgarre();
+  }
+
   // ---------- agarrar ----------
   function yawMando(c) {
     const f = new THREE.Vector3(0, 0, -1).applyQuaternion(c.quaternion).setY(0);
@@ -248,6 +258,6 @@ export function crearMaqueta({ app, scene, camera, mundo, luces, sombraSuelo, su
     get agarrando() { return agarres.size > 0; },
     get escala() { return mundo.scale.x; },
     get compensada() { return compensada; },
-    entrar, tamanoReal, reset, pasoEscala, girar, agarrar, soltar, porFrame,
+    entrar, tamanoReal, reset, pasoEscala, girar, agarrar, soltar, porFrame, cambioMarco,
   };
 }

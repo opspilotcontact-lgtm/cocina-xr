@@ -2,14 +2,18 @@
 // opciones.js, recorrer todas las estancias de la vivienda, teletransporte en RV, colocar y alinear una estancia
 // con una pared real (RM) y modo maqueta (ver maqueta.js).
 //
-// Contrato con opciones.js — grupos(app) → [{ id, titulo, filas }]:
-//   { tipo:'ciclo',  id, label, valor(), opciones() → [{ v, label, muestra? }], actual(), set(v) }
-//   { tipo:'num',    id, label, valor(), unidad, min, max, paso, actual(), set(n) }
+// Contrato con opciones.js (este archivo NO tiene opciones propias: solo dibuja lo que da grupos(app)):
+//   Grupo = { id, titulo, filas, ambito?: 'seleccion'|'estancia'|'casa'|'luz', seccion? }
+//   { tipo:'ciclo',  id, label, valor(), opciones() → [{ v, label, muestra?: '#hex'|{tipo:'madera',color} }], actual(), set(v) }
+//   { tipo:'num',    id, label, valor(), unidad, min, max, paso, actual(), set(n), deslizador?, previsualizar?(n) }
 //   { tipo:'toggle', id, label, actual(), set(b) }
-//   { tipo:'accion', id, label, fn(), peligro? }
-//   { tipo:'texto',  texto }
-// Al elegir algo con el rayo, el panel salta al grupo cuyo id coincide con su ámbito ('modulo', 'elemento',
-// 'estancia'); si no hay ninguno, al primero.
+//   { tipo:'accion', id, label, fn(), peligro?, confirmar? }   (en las gafas no se confirma: se avisa y hay «Deshacer»)
+//   { tipo:'texto',  texto, nivel?: 'error'|'aviso'|'info' }
+//   set()/fn() pueden devolver un texto de aviso. Tipos y extras desconocidos se ignoran.
+// Pestañas: una por ámbito (y sección de la estancia); un grupo sin ámbito, la suya. Al elegir algo con el rayo
+// se salta a «Elegido» (módulo/pieza) o a la primera sección de la estancia.
+// Selección (picks): userData { ambito:'modulo', tramo, idx } | { ambito:'elemento', estancia, id } | { ambito:'estancia', estancia };
+// los picks antiguos de la cocina ({ tramo, idx } a secas) también valen.
 //
 // Marco: `mundo` está en coords de la cocina activa; la casa entera cuelga de él (app.matrizCasa: planta → mundo).
 // En XR se mueve `mundo` (posición + giro en Y, y escala en maqueta) para poner cada estancia donde está el usuario.
@@ -48,7 +52,7 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
   let sueloY = 0;           // altura del suelo real en el espacio de referencia ('local' no lo conoce)
   let accion = null;        // 'colocar' | 'alinear' | null
   let ajustar = false, pielNueva = false;
-  let pagina = 'casa';      // pestaña: 'g:<id de grupo>' | 'casa' | 'vista' | 'sala'
+  let pagina = 'f:ir';     // pestaña: 'sel' | 'est:<sección>' | 'casa' | 'luz' | 'g:<id>' | 'f:ir' | 'f:vista' | 'f:sala'
   const paginas = new Map();// pestaña → página de filas
   let medida = null;        // { ancho, id, ventana? } de la última pared real alineada
   let nota = '';            // aviso dentro del panel (el aviso HTML no se ve con las gafas)
@@ -109,16 +113,16 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
     const est = estanciaPorId(app.casa, id); if (!est) return;
     // la pose de la cabeza antes de nada: activarCocina mueve la cámara de escritorio (OrbitControls)
     const h = cabeza(), f = adelante();
-    if (maq.activa) maq.reset();
     accion = null; mostrarPlanos(false);
     if (est.cocina && cocinaActiva(app.casa)?.id !== id) app.activarCocina(id);
+    if (app.casaSel?.estancia !== id) app.seleccionar({ ambito: 'estancia', estancia: id });
+    if (medida?.id !== id) medida = null;
+    // desde la maqueta: vuelta animada a tamaño real, dentro de esa estancia (maqueta.vuelta → puntoDeEstar)
+    if (maq.activa) { maq.tamanoReal(); decir(`Entras en ${est.nombre}.`); return; }
     const pe = puntoDeEstar(id); if (!pe) return;
     ponerMundo(pe.P, new THREE.Vector3(h.x, sueloY, h.z), pe.d, f);
-    app.seleccionar({ ambito: 'estancia', estancia: id });
     fijarAncla(id);
-    if (medida?.id !== id) medida = null;
-    nota = modo === 'ar' ? `${est.nombre} está aquí. Si quieres, alinéala a una pared real.` : `Estás en ${est.nombre}.`;
-    sucio = true;
+    decir(modo === 'ar' ? `${est.nombre} está aquí. Si quieres, alinéala a una pared real.` : `Estás en ${est.nombre}.`);
   }
 
   // ---------- suelo que recibe sombras (RM y mesa de la maqueta) ----------
@@ -171,8 +175,8 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
   function verMaqueta() {
     accion = null; mostrarPlanos(false);
     const enMesa = maq.entrar();
-    nota = enMesa ? 'Apoyada en la mesa detectada.' : (modo === 'ar' ? 'No se ha detectado ninguna mesa: va delante de ti.' : '');
-    pagina = 'vista'; sucio = true;
+    decir(enMesa ? 'Apoyada en la mesa detectada.' : (modo === 'ar' ? 'No se ha detectado ninguna mesa: va delante de ti.' : ''));
+    pagina = 'f:vista';
   }
 
   // ---------- mandos y manos ----------
@@ -206,6 +210,7 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
     c.addEventListener('disconnected', () => {
       maq.soltar(c); pellizcos.delete(c);
       if (arrastre?.c === c) arrastre = null;
+      if (deslizando?.c === c) soltarDeslizador();
       c.userData.fuente = null; c.userData.punto.visible = false; arco.visible = false; aro.visible = false;
       if (panel.parent === g && modo) panelFlotante();
     });
@@ -222,8 +227,8 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
   const modoManos = () => mandos.some(({ c }) => esMano(c)) && !mandos.some(({ c }) => c.userData.fuente && !esMano(c));
 
   // ---------- panel ----------
-  // Lienzo 1024 px = 0,30 m → 1 px ≈ 0,29 mm. Botones de 96 px ≈ 2,8 cm (objetivo ≥ 2,5 cm).
-  const PW = 1024, PH = 1024, ANCHO = 0.30;
+  // Lienzo 1024 × 1152 px = 0,30 × 0,34 m → 1 px ≈ 0,29 mm. Botones de 88–96 px ≈ 2,6–2,8 cm (objetivo ≥ 2,5 cm).
+  const PW = 1024, PH = 1152, ANCHO = 0.30;
   const lienzo = document.createElement('canvas'); lienzo.width = PW; lienzo.height = PH;
   const ctx = lienzo.getContext('2d');
   const texPanel = new THREE.CanvasTexture(lienzo); texPanel.colorSpace = THREE.SRGBColorSpace; texPanel.anisotropy = 4;
@@ -231,41 +236,76 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
   panel.visible = false; panel.renderOrder = 15; panel.name = 'panelXR';
   let botones = [], hover = null, sucio = true;
   let arrastre = null;      // { c, dist } mientras se recoloca el panel con el asa
-  function anclarPanel(grip) { grip.add(panel); panel.position.set(0, 0.18, -0.05); panel.rotation.set(-0.65, 0, 0); }
+  let deslizando = null;    // { c, f, k, v, v0 } mientras se arrastra un deslizador (num.deslizador)
+  function anclarPanel(grip) { grip.add(panel); panel.position.set(0, 0.19, -0.05); panel.rotation.set(-0.65, 0, 0); }
   function panelFlotante() {
     scene.add(panel);
     camera.updateMatrixWorld();
-    const p = new THREE.Vector3(-0.22, -0.18, -0.55).applyMatrix4(camera.matrixWorld);
+    const p = new THREE.Vector3(-0.22, -0.16, -0.55).applyMatrix4(camera.matrixWorld);
     panel.position.copy(p); panel.lookAt(cabeza());
   }
+
+  // aviso dentro del panel (el aviso HTML no se ve con las gafas); se borra solo a los 8 s
+  let notaT = 0;
+  function decir(t) { nota = t ? String(t) : ''; notaT = performance.now(); sucio = true; }
 
   // grupos de opciones (comunes con el escritorio); un fallo ahí no debe dejar el panel en blanco
   const erroresVistos = new Set();
   function registrar(msg, err) { const k = msg + String(err?.message || err); if (!erroresVistos.has(k)) { erroresVistos.add(k); console.error(msg, err); } }
-  function leerGrupos() { try { return (gruposOpciones(app) || []).filter(g => g && g.id != null); } catch (err) { registrar('XR: grupos() falló', err); return []; } }
-
-  function pestanas(gs) {
-    return [
-      ...gs.map(g => ({ id: 'g:' + g.id, t: g.titulo || g.id })),
-      { id: 'casa', t: 'Casa' }, { id: 'vista', t: 'Vista' }, { id: 'sala', t: modo === 'ar' ? 'Sala real' : 'Moverse' },
-    ];
+  function leerGrupos() { try { return (gruposOpciones(app) || []).filter(g => g && g.id != null && Array.isArray(g.filas)); } catch (err) { registrar('XR: grupos() falló', err); return []; } }
+  // set()/fn() de opciones.js pueden devolver un texto de aviso
+  function llamar(fn, ...args) {
+    if (typeof fn !== 'function') return undefined;
+    try { const r = fn(...args); if (typeof r === 'string' && r) decir(r); return r; } catch (err) { registrar('XR: opción', err); decir('No se ha podido aplicar.'); return undefined; }
   }
-  // tras elegir algo, a su grupo
+
+  // Pestañas de arriba: una por ámbito/sección del contrato (Elegido · secciones de la estancia · Casa · Luz).
+  // Un grupo sin ámbito (opciones.js antiguo) tiene su propia pestaña. Abajo, fijas: Estancias · Vista · Sala.
+  function claveGrupo(g) {
+    const a = g.ambito;
+    if (a === 'seleccion' || (!a && (g.id === 'modulo' || g.id === 'elemento'))) return { id: 'sel', t: 'Elegido' };
+    if (a === 'estancia') { const s = String(g.seccion || 'Estancia'); return { id: 'est:' + s, t: s }; }
+    if (a === 'casa') return { id: 'casa', t: 'Casa' };
+    if (a === 'luz') return { id: 'luz', t: 'Luz' };
+    if (a) return { id: 'a:' + a, t: String(a) };
+    return { id: 'g:' + g.id, t: String(g.titulo || g.id) };
+  }
+  function pestanas(gs) {
+    const ctxTabs = [];
+    for (const g of gs) {
+      const k = claveGrupo(g);
+      let t = ctxTabs.find(x => x.id === k.id);
+      if (!t) ctxTabs.push(t = { ...k, grupos: [] });
+      t.grupos.push(g);
+    }
+    const fijas = [{ id: 'f:ir', t: 'Estancias' }, { id: 'f:vista', t: 'Vista' }, { id: 'f:sala', t: modo === 'ar' ? 'Sala real' : 'Moverse' }];
+    return { ctx: ctxTabs, fijas, todas: [...ctxTabs, ...fijas] };
+  }
+  // tras elegir algo, a su pestaña: lo elegido → «Elegido»; una estancia → su primera sección
   function saltarA(ambito) {
-    const gs = leerGrupos();
-    const g = gs.find(x => x.id === ambito) || gs.find(x => String(x.id).startsWith(ambito)) || (ambito === 'estancia' ? null : gs[0]);
-    pagina = g ? 'g:' + g.id : 'casa'; sucio = true;
+    const { ctx: tabs } = pestanas(leerGrupos());
+    const t = ambito === 'estancia'
+      ? tabs.find(x => x.id.startsWith('est:')) || tabs.find(x => x.id === 'g:estancia')
+      : tabs.find(x => x.id === 'sel');
+    pagina = (t || tabs[0])?.id ?? 'f:ir'; sucio = true;
+  }
+  // elegir una estancia para editarla (sin moverse); una cocina pasa a ser la activa (sus opciones son las de app.estado)
+  function elegirEstancia(id, saltar = true) {
+    const e = estanciaPorId(app.casa, id); if (!e) return;
+    if (e.cocina && cocinaActiva(app.casa)?.id !== id) app.activarCocina(id);
+    app.seleccionar({ ambito: 'estancia', estancia: id });
+    if (saltar) saltarA('estancia');
   }
 
   // filas de las pestañas fijas (mismo formato que opciones.js, más 'pasos' e 'ir', que solo usa el panel)
   function filasCasa() {
-    const casa = app.casa, actual = estXR(), dentro = ancla?.id;
-    const out = [{ tipo: 'texto', texto: `${casa.nombre || 'Vivienda'} · ${casa.estancias.length} estancias. «Ir» te lleva dentro; el nombre la elige para editarla.` }];
+    const casa = app.casa, actual = estXR(), dentro = maq.activa ? null : ancla?.id;
+    const out = [{ tipo: 'texto', texto: `${casa.nombre || 'Vivienda'} · ${casa.estancias.length} estancias. El nombre la elige para editarla; «Ir» te lleva dentro.` }];
     for (const e of casa.estancias) {
       out.push({
         tipo: 'ir', label: e.nombre, sub: `${(TIPOS[e.tipo] || TIPOS.otro).nombre} · ${m2(utilEstancia(e))} m²${e.id === dentro ? ' · estás aquí' : ''}`,
         marcada: e.id === actual,
-        elegir: () => { app.seleccionar({ ambito: 'estancia', estancia: e.id }); if (e.cocina && cocinaActiva(app.casa)?.id !== e.id) app.activarCocina(e.id); saltarA(e.cocina ? 'estilo' : 'estancia'); },
+        elegir: () => elegirEstancia(e.id),
         ir: () => irA(e.id),
       });
     }
@@ -277,16 +317,14 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
       out.push({ tipo: 'texto', texto: 'La vivienda en miniatura (1:20) sobre una mesa. Si las gafas detectan una mesa, se apoya en ella; si no, aparece delante de ti.' });
       out.push({ tipo: 'accion', label: 'Ver como maqueta', fn: verMaqueta });
     } else {
-      out.push({ tipo: 'texto', texto: modoManos() ? 'Pellizca y mantén para moverla; con las dos manos, escala y gira. Apunta a un suelo para elegir la estancia.' : 'Botón lateral para agarrarla; con los dos mandos, escala y gira. Apunta a un suelo para elegir la estancia.' });
+      out.push({ tipo: 'texto', texto: modoManos() ? 'Pellizca y mantén para moverla; con las dos manos, escala y gira. Apunta a un suelo o a un mueble para elegirlo.' : 'Botón lateral para agarrarla; con los dos mandos, escala y gira. Apunta a un suelo o a un mueble para elegirlo.' });
       out.push({ tipo: 'pasos', label: 'Escala', valor: `1:${Math.round(1 / maq.escala)}`, menos: () => maq.pasoEscala(-1), mas: () => maq.pasoEscala(1) });
       out.push({ tipo: 'pasos', label: 'Girar', valor: '90°', menos: () => maq.girar(Math.PI / 2), mas: () => maq.girar(-Math.PI / 2) });
       out.push({ tipo: 'accion', label: 'Recolocar', fn: verMaqueta });
-      out.push({ tipo: 'accion', label: 'Tamaño real', fn: () => { maq.tamanoReal(); nota = `Vuelves a ${nombreDe(estXR())}.`; } });
+      out.push({ tipo: 'accion', label: `Entrar en ${nombreDe(estXR())}`, fn: () => irA(estXR()) });
     }
     out.push({ tipo: 'toggle', label: 'Luz LED real', actual: () => !luces.ligero, set: b => { luces.ligero = !b; app.aplicarLuz(); sucio = true; } });
-    out.push({ tipo: 'accion', label: 'Deshacer', fn: () => app.deshacer() });
     out.push({ tipo: 'accion', label: 'Rehacer', fn: () => app.rehacer() });
-    if (nota) out.push({ tipo: 'texto', texto: nota });
     return out;
   }
   function filasSala() {
@@ -299,7 +337,7 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
       out.push({ tipo: 'toggle', label: 'Paredes nuevas', actual: () => pielNueva, set: b => { pielNueva = b; visibilidadSala(); sucio = true; } });
       out.push({ tipo: 'toggle', label: 'Sticks: mover', actual: () => ajustar, set: b => { ajustar = b; sucio = true; } });
       if (accion === 'alinear' && !planos.size) {
-        out.push({ tipo: 'texto', texto: 'Las gafas no comparten paredes: configura el espacio (límite y paredes) en los ajustes de las Quest.' });
+        out.push({ tipo: 'texto', nivel: 'aviso', texto: 'Las gafas no comparten paredes: configura el espacio (límite y paredes) en los ajustes de las Quest.' });
         if (sesion?.initiateRoomCapture) out.push({ tipo: 'accion', label: 'Escanear la sala', fn: () => sesion.initiateRoomCapture().catch(() => { }) });
       }
       if (medida && medida.id === id) {
@@ -309,12 +347,11 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
         if (medida.ventana) out.push({ tipo: 'accion', label: 'Usar la ventana', fn: usarVentana });
       }
     } else {
-      out.push({ tipo: 'texto', texto: modoManos() ? `Realidad virtual · ${nom}. Apunta al suelo y pellizca para ir allí.` : `Realidad virtual · ${nom}. Apunta al suelo (arco) y gatillo para ir; stick izq. andar, dcho. girar.` });
+      out.push({ tipo: 'texto', texto: modoManos() ? `Realidad virtual · ${nom}. Apunta al suelo y pellizca para ir allí; también entre estancias.` : `Realidad virtual · ${nom}. Apunta al suelo (arco) y gatillo para ir, también a otra estancia; stick izq. andar, dcho. girar.` });
       out.push({ tipo: 'accion', label: 'Volver al centro', fn: () => irA(id) });
       out.push({ tipo: 'accion', label: 'Maqueta', fn: verMaqueta });
     }
-    if (accion) out.push({ tipo: 'texto', texto: accion === 'colocar' ? `Apunta al suelo donde va el centro de la pared principal de ${nom} y pulsa el gatillo.` : `Apunta a la pared real (contorno) donde va la pared principal de ${nom} y pulsa el gatillo.` });
-    if (nota && !maq.activa) out.push({ tipo: 'texto', texto: nota });
+    if (accion) out.push({ tipo: 'texto', nivel: 'info', texto: accion === 'colocar' ? `Apunta al suelo donde va el centro de la pared principal de ${nom} y pulsa el gatillo.` : `Apunta a la pared real (contorno) donde va la pared principal de ${nom} y pulsa el gatillo.` });
     return out;
   }
   function usarMedida(id) {
@@ -322,8 +359,8 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
     const cm = Math.round(medida.ancho * 100);
     if (ml.est.cocina && cocinaActiva(app.casa)?.id === id) app.cambiar(st => { st.sala.A = cm; });
     else if (ml.m.rect) app.cambiarCasa(c => { moverBorde(c, id, ml.m.letras.C, cm - ml.m.A); return { estancia: id }; });
-    else { nota = 'Solo se puede ajustar la medida de estancias rectangulares.'; sucio = true; return; }
-    nota = `${ml.est.nombre}: pared principal a ${cm} cm.`; sucio = true;
+    else { decir('Solo se puede ajustar la medida de estancias rectangulares.'); return; }
+    decir(`${ml.est.nombre}: pared principal a ${cm} cm.`);
   }
   function usarVentana() {
     const v = medida?.ventana; if (!v) return;
@@ -331,11 +368,12 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
   }
 
   // ---------- dibujo del panel ----------
-  const ALTO_FILA = 112, ALTO_BOTON = 96, Y0 = 180, Y1 = PH - 120;
-  const F_BOTON = '600 34px system-ui, sans-serif', F_TEXTO = '32px system-ui, sans-serif';
+  const ALTO_FILA = 112, ALTO_BOTON = 96, ALTO_TAB = 88, Y_TAB1 = 68, Y_TAB2 = 164, Y0 = 272, Y_PIE = PH - 108;
+  const F_BOTON = '600 34px system-ui, sans-serif', F_TEXTO = '32px system-ui, sans-serif', F_TAB = '600 30px system-ui, sans-serif';
   const C = { fondo: 'rgba(247,245,241,0.97)', tinta: '#1f1f1d', suave: '#ece9e3', suaveH: '#e3dfd8', acento: '#ff6a2b', peligro: '#b8402a', gris: '#7a766e', texto: '#4f4c46', linea: '#e2ded7' };
+  const NIVEL = { error: '#b8402a', aviso: '#a8650a', info: '#3f6f5a' };
 
-  function boton(id, r, fn, texto, { estilo = 'oscuro', fuente = F_BOTON, alinear = 'center' } = {}) {
+  function boton(id, r, fn, texto, { estilo = 'oscuro', fuente = F_BOTON, alinear = 'center', extra } = {}) {
     const h = hover === id;
     const bg = { oscuro: h ? C.acento : C.tinta, claro: h ? C.suaveH : C.suave, activo: h ? C.acento : '#3c3a35', peligro: h ? C.acento : C.peligro }[estilo];
     ctx.fillStyle = bg; ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -344,7 +382,32 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
       const x = alinear === 'center' ? r.x + r.w / 2 : r.x + 24;
       ctx.fillText(recortar(texto, r.w - 30), x, r.y + r.h / 2 + 2); ctx.textAlign = 'left';
     }
-    botones.push({ id, ...r, fn, texto });
+    botones.push({ id, ...r, fn, texto, ...extra });
+  }
+  // muestra de color: '#hex' o { tipo:'madera', color } (vetas)
+  function pintarMuestra(m, x, y, s) {
+    const col = typeof m === 'string' ? m : m?.color; if (!col) return false;
+    ctx.fillStyle = col; ctx.fillRect(x, y, s, s);
+    if (typeof m === 'object' && m.tipo === 'madera') {
+      ctx.strokeStyle = '#00000026'; ctx.lineWidth = 3;
+      for (let i = 1; i < 5; i++) { ctx.beginPath(); ctx.moveTo(x, y + i * s / 5); ctx.bezierCurveTo(x + s / 3, y + i * s / 5 - 4, x + 2 * s / 3, y + i * s / 5 + 4, x + s, y + i * s / 5); ctx.stroke(); }
+    }
+    ctx.strokeStyle = '#00000033'; ctx.lineWidth = 2; ctx.strokeRect(x, y, s, s);
+    return true;
+  }
+  const numDe = f => Number(f.actual?.());
+  function textoNum(f, v) {
+    let t;
+    if (v != null) t = Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100).replace('.', ',');
+    else { try { t = String(f.valor ? f.valor() : f.actual?.() ?? ''); } catch { t = ''; } }
+    // valor() del contrato ya trae la unidad; si solo es un número, se le pone
+    if (f.unidad && /^-?[\d.,]+$/.test(t)) t += ' ' + f.unidad;
+    return t;
+  }
+  function valorDesliz(f, u) {
+    const min = Number.isFinite(f.min) ? f.min : 0, max = Number.isFinite(f.max) ? f.max : min + 100, p = f.paso || 1;
+    const n = min + THREE.MathUtils.clamp(u, 0, 1) * (max - min);
+    return Math.round(THREE.MathUtils.clamp(Math.round((n - min) / p) * p + min, min, max) * 1000) / 1000;
   }
 
   function pintarFila(f, y, k) {
@@ -359,43 +422,57 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
       const ops = f.opciones?.() || [];
       const cur = f.actual?.();
       const i = Math.max(0, ops.findIndex(o => o.v === cur));
-      const muestra = ops[i]?.muestra;
-      if (muestra) { ctx.fillStyle = muestra; ctx.fillRect(262, yc - 22, 44, 44); ctx.strokeStyle = '#00000033'; ctx.lineWidth = 2; ctx.strokeRect(262, yc - 22, 44, 44); }
-      valor(f.valor?.() ?? ops[i]?.label ?? '', muestra ? 318 : 262, muestra ? 414 : 470);
-      const ir = d => () => { if (!ops.length) return; f.set(ops[(i + d + ops.length) % ops.length].v); };
+      const conMuestra = pintarMuestra(ops[i]?.muestra, 262, yc - 22, 44);
+      valor(f.valor?.() ?? ops[i]?.label ?? '', conMuestra ? 318 : 262, conMuestra ? 414 : 470);
+      const ir = d => () => { if (!ops.length) return; llamar(f.set, ops[(i + d + ops.length) % ops.length].v); };
       flechas(ir(-1), ir(1));
     } else if (f.tipo === 'num') {
-      const u = f.unidad ? ' ' + f.unidad : '';
-      const v = String(f.valor?.() ?? f.actual?.());
-      valor(u && v.endsWith(f.unidad) ? v : v + u);
       const paso = d => () => {
-        const a = Number(f.actual?.()) || 0, p = f.paso || 1;
+        const a = numDe(f) || 0, p = f.paso || 1;
         const n = Math.round(THREE.MathUtils.clamp(a + d * p, f.min ?? -Infinity, f.max ?? Infinity) * 1000) / 1000;
-        if (n !== a) f.set(n);
+        if (n !== a) llamar(f.set, n);
       };
+      if (f.deslizador && Number.isFinite(f.min) && Number.isFinite(f.max) && f.max > f.min) {
+        // deslizador: tocar o arrastrar sobre la barra (con previsualizar, en vivo; se guarda al soltar)
+        const enCurso = deslizando?.k === k ? deslizando.v : null;
+        const v = enCurso ?? numDe(f);
+        valor(enCurso != null && !f.previsualizar ? textoNum(f, enCurso) : textoNum(f), 228, 190);
+        const r = { x: 430, y, w: 310, h: ALTO_BOTON };
+        const u = THREE.MathUtils.clamp((v - f.min) / (f.max - f.min), 0, 1);
+        const act = hover === k + 'd' || enCurso != null;
+        ctx.fillStyle = C.suave; ctx.fillRect(r.x, yc - 8, r.w, 16);
+        ctx.fillStyle = act ? C.acento : C.tinta; ctx.fillRect(r.x, yc - 8, r.w * u, 16);
+        ctx.beginPath(); ctx.arc(r.x + r.w * u, yc, act ? 26 : 22, 0, Math.PI * 2); ctx.fill();
+        botones.push({ id: k + 'd', ...r, fn: null, desliz: { f, k } });
+      } else valor(textoNum(f));
       flechas(paso(-1), paso(1), ['−', '+']);
     } else if (f.tipo === 'pasos') {
       valor(f.valor); flechas(f.menos, f.mas);
     } else if (f.tipo === 'toggle') {
       const on = !!f.actual?.();
       ctx.fillStyle = C.tinta; ctx.font = '600 38px system-ui, sans-serif'; ctx.fillText(on ? 'Sí' : 'No', 262, yc);
-      boton(k + 't', { x: 752, y, w: 252, h: ALTO_BOTON }, () => f.set(!on), on ? 'Activado ✓' : 'Activar', { estilo: on ? 'activo' : 'claro' });
+      boton(k + 't', { x: 752, y, w: 252, h: ALTO_BOTON }, () => llamar(f.set, !on), on ? 'Activado ✓' : 'Activar', { estilo: on ? 'activo' : 'claro' });
     } else if (f.tipo === 'ir') {
       const r = { x: 20, y, w: PW - 40 - 210, h: ALTO_BOTON };
       boton(k + 'e', r, f.elegir, null, { estilo: f.marcada ? 'activo' : 'claro' });
       const claro = !f.marcada && hover !== k + 'e';
-      ctx.fillStyle = claro ? C.tinta : '#fff'; ctx.font = '600 36px system-ui, sans-serif'; ctx.fillText(recortar(f.label, 380), 44, yc);
-      ctx.fillStyle = claro ? C.gris : '#ffffffcc'; ctx.font = '28px system-ui, sans-serif'; ctx.fillText(recortar(f.sub || '', r.w - 440), 440, yc);
+      ctx.fillStyle = claro ? C.tinta : '#fff'; ctx.font = '600 36px system-ui, sans-serif'; ctx.fillText(recortar(f.label, 360), 44, yc);
+      ctx.fillStyle = claro ? C.gris : '#ffffffcc'; ctx.font = '28px system-ui, sans-serif'; ctx.fillText(recortar(f.sub || '', r.w - 420), 420, yc);
       boton(k + 'i', { x: PW - 20 - 200, y, w: 200, h: ALTO_BOTON }, f.ir, 'Ir');
-    } else return;
+    } else {
+      // tipo desconocido: solo lectura si trae algo que enseñar
+      let t = ''; try { t = String(f.valor?.() ?? f.texto ?? ''); } catch { t = ''; }
+      valor(t);
+    }
     ctx.fillStyle = C.linea; ctx.fillRect(32, y + ALTO_BOTON + 7, PW - 64, 2);
   }
 
+  const TIPOS_FILA = new Set(['ciclo', 'num', 'toggle', 'pasos', 'ir']);
   // filas → renglones con alto conocido (las acciones seguidas se juntan de 1 a 3 por renglón)
   function renglones(filas) {
     const out = [];
     for (let i = 0; i < filas.length; i++) {
-      const f = filas[i]; if (!f) continue;
+      const f = filas[i]; if (!f || typeof f !== 'object') continue;
       if (f.tipo === 'accion') {
         const run = [f]; while (filas[i + 1]?.tipo === 'accion') run.push(filas[++i]);
         ctx.font = F_BOTON;
@@ -406,30 +483,54 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
           out.push({
             alto: ALTO_FILA, pintar: (y, id) => {
               const bw = (PW - 40) / trozo.length;
-              trozo.forEach((a, j) => boton(id + 'a' + j, { x: 20 + j * bw, y, w: bw - 10, h: ALTO_BOTON }, a.fn, a.label, { estilo: a.peligro ? 'peligro' : 'oscuro' }));
+              trozo.forEach((a, j) => boton(id + 'a' + j, { x: 20 + j * bw, y, w: bw - 10, h: ALTO_BOTON }, () => {
+                const r = llamar(a.fn);
+                // en las gafas no se pide confirmación: se hace y se recuerda que se puede deshacer
+                if (a.confirmar && typeof r !== 'string') decir(`«${a.label}» hecho. Si no era eso, «Deshacer» abajo.`);
+              }, a.label, { estilo: a.peligro ? 'peligro' : 'oscuro' }));
             },
           });
         }
         continue;
       }
-      if (f.tipo === 'texto') {
-        ctx.font = F_TEXTO;
-        const ls = lineas(String(f.texto ?? ''), PW - 64);
-        out.push({ alto: 18 + ls.length * 40, pintar: y => { ctx.fillStyle = C.texto; ctx.font = F_TEXTO; ls.forEach((l, j) => ctx.fillText(l, 32, y + 24 + j * 40)); } });
+      if (f.tipo === 'texto' || f.tipo === '_titulo') {
+        const titulo = f.tipo === '_titulo', col = NIVEL[f.nivel];
+        const fuente = titulo ? '600 34px system-ui, sans-serif' : F_TEXTO;
+        ctx.font = fuente;
+        const ls = lineas(String(f.texto ?? ''), PW - 64 - (col ? 20 : 0));
+        out.push({
+          alto: (titulo ? 30 : 18) + ls.length * 40, pintar: y => {
+            if (col) { ctx.fillStyle = col; ctx.fillRect(32, y + 6, 8, ls.length * 40); }
+            ctx.fillStyle = titulo ? C.tinta : col || C.texto; ctx.font = fuente;
+            ls.forEach((l, j) => ctx.fillText(l, col ? 52 : 32, y + (titulo ? 34 : 24) + j * 40));
+          },
+        });
         continue;
       }
+      // tipos que no se conocen: se enseñan solo si traen etiqueta y valor (contrato abierto)
+      if (!TIPOS_FILA.has(f.tipo) && !(f.label && typeof f.valor === 'function')) continue;
       out.push({ alto: ALTO_FILA, pintar: (y, id) => pintarFila(f, y, id) });
     }
     return out;
   }
-  function paginar(rs) {
+  function paginar(rs, alto) {
     const pags = []; let cur = [], h = 0;
     for (const r of rs) {
-      if (cur.length && h + r.alto > Y1 - Y0) { pags.push(cur); cur = []; h = 0; }
+      if (cur.length && h + r.alto > alto) { pags.push(cur); cur = []; h = 0; }
       cur.push(r); h += r.alto;
     }
     if (cur.length || !pags.length) pags.push(cur);
     return pags;
+  }
+  // filas de una pestaña de grupos: con más de un grupo, cada uno con su título
+  function filasDeTab(tab) {
+    const out = [];
+    const conTitulo = tab.grupos.length > 1 || (tab.grupos[0]?.titulo && tab.grupos[0].titulo !== tab.t);
+    for (const g of tab.grupos) {
+      if (conTitulo && g.titulo) out.push({ tipo: '_titulo', texto: g.titulo });
+      out.push(...g.filas);
+    }
+    return out;
   }
 
   function dibujar() {
@@ -442,34 +543,70 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
     ctx.fillStyle = hover === 'asa' || arrastre ? C.acento : '#cfc9bf'; ctx.beginPath(); ctx.roundRect(asa.x + 120, asa.y + 20, asa.w - 240, 16, 8); ctx.fill();
     botones.push({ ...asa, fn: null });
 
-    // pestañas: grupos de opciones + fijas; si no caben, ◀ ▶ pasan a la anterior/siguiente
     const gs = leerGrupos();
-    const tabs = pestanas(gs);
-    let ia = tabs.findIndex(t => t.id === pagina);
-    if (ia < 0) { ia = 0; pagina = tabs[0].id; }
-    const caben = tabs.length <= 5 ? tabs.length : 4;
-    const ini = THREE.MathUtils.clamp(ia - Math.floor(caben / 2), 0, tabs.length - caben);
-    let x0 = 20, x1 = PW - 20;
-    if (caben < tabs.length) {
-      boton('tab<', { x: 20, y: 68, w: 84, h: ALTO_BOTON }, () => { pagina = tabs[(ia - 1 + tabs.length) % tabs.length].id; accion = null; mostrarPlanos(false); }, '◀', { estilo: 'claro' });
-      boton('tab>', { x: PW - 104, y: 68, w: 84, h: ALTO_BOTON }, () => { pagina = tabs[(ia + 1) % tabs.length].id; accion = null; mostrarPlanos(false); }, '▶', { estilo: 'claro' });
-      x0 = 112; x1 = PW - 112;
+    const { ctx: tabs, fijas, todas } = pestanas(gs);
+    let tab = todas.find(t => t.id === pagina);
+    if (!tab) { tab = tabs.find(t => t.id.startsWith('est:')) || tabs[0] || fijas[0]; pagina = tab.id; }
+    const cambiarA = id => () => { pagina = id; if (id !== 'f:sala') { accion = null; mostrarPlanos(false); } };
+
+    // fila 1: pestañas de opciones; si no caben, ◀ ▶ pasan a la anterior/siguiente
+    if (tabs.length) {
+      const ia = Math.max(0, tabs.findIndex(t => t.id === pagina));
+      const caben = tabs.length <= 5 ? tabs.length : 4;
+      const ini = THREE.MathUtils.clamp(ia - Math.floor(caben / 2), 0, tabs.length - caben);
+      let x0 = 20, x1 = PW - 20;
+      if (caben < tabs.length) {
+        const enCtx = tabs.some(t => t.id === pagina);
+        boton('tab<', { x: 20, y: Y_TAB1, w: 84, h: ALTO_TAB }, cambiarA(tabs[enCtx ? (ia - 1 + tabs.length) % tabs.length : 0].id), '◀', { estilo: 'claro' });
+        boton('tab>', { x: PW - 104, y: Y_TAB1, w: 84, h: ALTO_TAB }, cambiarA(tabs[enCtx ? (ia + 1) % tabs.length : 0].id), '▶', { estilo: 'claro' });
+        x0 = 112; x1 = PW - 112;
+      }
+      const tw = (x1 - x0) / caben;
+      tabs.slice(ini, ini + caben).forEach((t, j) => {
+        const r = { x: x0 + j * tw, y: Y_TAB1, w: tw - 8, h: ALTO_TAB };
+        const activa = t.id === pagina;
+        boton('tab:' + t.id, r, cambiarA(t.id), t.t, { estilo: activa ? 'oscuro' : 'claro', fuente: F_TAB });
+        if (activa) { ctx.fillStyle = C.acento; ctx.fillRect(r.x, r.y + r.h - 6, r.w, 6); }
+      });
     }
-    const tw = (x1 - x0) / caben;
-    tabs.slice(ini, ini + caben).forEach((t, j) => {
-      const r = { x: x0 + j * tw, y: 68, w: tw - 8, h: ALTO_BOTON };
+
+    // fila 2: estancia con la que se trabaja (◀ ▶ cambian, el nombre te lleva dentro) y pestañas fijas
+    const ests = app.casa.estancias, idA = estXR(), iE = Math.max(0, ests.findIndex(e => e.id === idA));
+    const aqui = !maq.activa && ancla?.id === idA;
+    if (ests.length > 1) {
+      boton('est<', { x: 20, y: Y_TAB2, w: 64, h: ALTO_TAB }, () => elegirEstancia(ests[(iE - 1 + ests.length) % ests.length].id), '◀', { estilo: 'claro', fuente: F_TAB });
+      boton('est>', { x: 386, y: Y_TAB2, w: 64, h: ALTO_TAB }, () => elegirEstancia(ests[(iE + 1) % ests.length].id), '▶', { estilo: 'claro', fuente: F_TAB });
+    }
+    const nom = ests[iE]?.nombre ?? '';
+    boton('estIr', { x: ests.length > 1 ? 90 : 20, y: Y_TAB2, w: ests.length > 1 ? 290 : 430, h: ALTO_TAB }, () => irA(idA),
+      aqui ? `${nom} · aquí` : `Ir a ${nom}`, { estilo: aqui ? 'activo' : 'oscuro', fuente: F_TAB });
+    const fw = (PW - 20 - 462) / fijas.length;
+    fijas.forEach((t, j) => {
+      const r = { x: 462 + j * fw, y: Y_TAB2, w: fw - 8, h: ALTO_TAB };
       const activa = t.id === pagina;
-      boton('tab:' + t.id, r, () => { pagina = t.id; if (t.id !== 'sala') { accion = null; mostrarPlanos(false); } }, t.t, { estilo: activa ? 'oscuro' : 'claro', fuente: '600 32px system-ui, sans-serif' });
+      boton('tab:' + t.id, r, cambiarA(t.id), t.t, { estilo: activa ? 'oscuro' : 'claro', fuente: F_TAB });
       if (activa) { ctx.fillStyle = C.acento; ctx.fillRect(r.x, r.y + r.h - 6, r.w, 6); }
     });
+    ctx.fillStyle = C.linea; ctx.fillRect(20, Y0 - 12, PW - 40, 2);
+
+    // aviso (si hay) encima del pie
+    ctx.font = F_TEXTO;
+    const ln = nota ? lineas(nota, PW - 84).slice(0, 3) : [];
+    const yNota = Y_PIE - 12 - ln.length * 40;
+    if (ln.length) {
+      ctx.fillStyle = '#fff1e9'; ctx.fillRect(20, yNota - 8, PW - 40, ln.length * 40 + 12);
+      ctx.fillStyle = C.acento; ctx.fillRect(20, yNota - 8, 8, ln.length * 40 + 12);
+      ctx.fillStyle = C.tinta; ln.forEach((l, j) => ctx.fillText(l, 44, yNota + 14 + j * 40));
+    }
 
     // filas de la pestaña, paginadas
     let filas = [];
     try {
-      if (pagina.startsWith('g:')) filas = gs.find(g => 'g:' + g.id === pagina)?.filas || [];
-      else filas = pagina === 'casa' ? filasCasa() : pagina === 'vista' ? filasVista() : filasSala();
+      if (tab.grupos) filas = filasDeTab(tab);
+      else filas = pagina === 'f:ir' ? filasCasa() : pagina === 'f:vista' ? filasVista() : filasSala();
     } catch (err) { registrar('XR: filas de la pestaña', err); }
-    const pags = paginar(renglones(filas));
+    if (!filas.length) filas = [{ tipo: 'texto', texto: 'Nada que ajustar aquí.' }];
+    const pags = paginar(renglones(filas), (ln.length ? yNota - 16 : Y_PIE - 12) - Y0);
     const np = Math.min(paginas.get(pagina) || 0, pags.length - 1);
     paginas.set(pagina, np);
     let y = Y0;
@@ -478,14 +615,14 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
       y += r.alto;
     });
 
-    // pie: páginas y salir
-    const yp = PH - 108;
+    // pie: páginas, deshacer y salir
     if (pags.length > 1) {
-      boton('pag-', { x: 20, y: yp, w: 120, h: ALTO_BOTON }, () => paginas.set(pagina, Math.max(0, np - 1)), '▲', { estilo: np > 0 ? 'oscuro' : 'claro' });
-      ctx.fillStyle = C.gris; ctx.font = '600 32px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(`${np + 1} / ${pags.length}`, 220, yp + ALTO_BOTON / 2); ctx.textAlign = 'left';
-      boton('pag+', { x: 300, y: yp, w: 120, h: ALTO_BOTON }, () => paginas.set(pagina, Math.min(pags.length - 1, np + 1)), '▼', { estilo: np < pags.length - 1 ? 'oscuro' : 'claro' });
+      boton('pag-', { x: 20, y: Y_PIE, w: 110, h: ALTO_BOTON }, () => paginas.set(pagina, Math.max(0, np - 1)), '▲', { estilo: np > 0 ? 'oscuro' : 'claro' });
+      ctx.fillStyle = C.gris; ctx.font = '600 32px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(`${np + 1} / ${pags.length}`, 195, Y_PIE + ALTO_BOTON / 2); ctx.textAlign = 'left';
+      boton('pag+', { x: 260, y: Y_PIE, w: 110, h: ALTO_BOTON }, () => paginas.set(pagina, Math.min(pags.length - 1, np + 1)), '▼', { estilo: np < pags.length - 1 ? 'oscuro' : 'claro' });
     }
-    boton('salir', { x: PW - 260, y: yp, w: 240, h: ALTO_BOTON }, () => sesion?.end().catch(() => { }), 'Salir');
+    boton('deshacer', { x: PW - 500, y: Y_PIE, w: 230, h: ALTO_BOTON }, () => { app.deshacer(); decir(''); }, 'Deshacer', { estilo: 'claro' });
+    boton('salir', { x: PW - 260, y: Y_PIE, w: 240, h: ALTO_BOTON }, () => sesion?.end().catch(() => { }), 'Salir');
     texPanel.needsUpdate = true;
   }
   function recortar(t, maxW) { t = String(t); if (ctx.measureText(t).width <= maxW) return t; while (ctx.measureText(t + '…').width > maxW && t.length > 3) t = t.slice(0, -1); return t + '…'; }
@@ -568,7 +705,7 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
         medida.ventana = { pared: 'A', x: Math.min(...sw) * 100, ancho: (Math.max(...sw) - Math.min(...sw)) * 100, antepecho: w.ymin * 100, alto: w.alto * 100 };
       }
     }
-    accion = null; mostrarPlanos(false); pagina = 'sala'; nota = ''; sucio = true;
+    accion = null; mostrarPlanos(false); pagina = 'f:sala'; decir('');
     app.seleccionar({ ambito: 'estancia', estancia: id });
     aviso(`${ml.est.nombre} alineada a una pared de ${Math.round(d.ancho * 100)} cm`);
   }
@@ -576,6 +713,13 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
   // ---------- rayos, arco, gatillo y pellizco ----------
   const rc = new THREE.Raycaster(); const mrot = new THREE.Matrix4();
   function rayoDe(c) { mrot.identity().extractRotation(c.matrixWorld); rc.ray.origin.setFromMatrixPosition(c.matrixWorld); rc.ray.direction.set(0, 0, -1).applyMatrix4(mrot); rc.far = Infinity; return rc; }
+  // tabiques visibles (malla de instancias 'muro' de la casa), para que no se elija a través de ellos
+  let murosCache = null, murosDe = null;
+  function muros() {
+    const g = app.salaGrupo; if (!g) return [];
+    if (murosDe !== g) { murosDe = g; murosCache = g.children.filter(o => o.isInstancedMesh && o.name === 'muro'); }
+    return murosCache.filter(o => o.visible);
+  }
   // forma común de lo elegido (los picks de la cocina antiguos solo traen tramo/idx)
   function selDe(u) {
     if (u.ambito === 'elemento') return { ambito: 'elemento', estancia: u.estancia, id: u.id };
@@ -610,7 +754,7 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
       if (h) {
         const px = h.uv.x * PW, py = (1 - h.uv.y) * PH;
         const b = botones.find(q => px >= q.x && px <= q.x + q.w && py >= q.y && py <= q.y + q.h);
-        return { tipo: 'panel', punto: h.point, dist: h.distance, boton: b };
+        return { tipo: 'panel', punto: h.point, dist: h.distance, boton: b, px, py };
       }
     }
     if (accion === 'colocar') {
@@ -622,19 +766,24 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
       const h = r.intersectObjects(grupoPlanos.children.filter(o => o.isMesh && o.userData.plano?.vertical), false)[0];
       return h ? { tipo: 'plano', punto: h.point, dist: h.distance, plano: h.object.userData.plano } : null;
     }
-    // muebles y elementos (a tamaño real, a menos de 5 m para no elegir a través de media casa)
+    // módulos y piezas (a tamaño real, a menos de 5 m y sin un tabique visible delante: no se elige a través de
+    // media casa). Los picks de suelo de estancia ({ ambito:'estancia' }) van aparte: en RV el suelo es para el arco.
     const lejos = maq.activa ? Infinity : 5;
-    const hp = r.intersectObjects(app.picks, false).find(h => h.distance < lejos && selDe(h.object.userData));
-    if (hp) return { tipo: 'pick', punto: hp.point, dist: hp.distance, sel: selDe(hp.object.userData) };
-    // RV a tamaño real: arco de teletransporte; RM y maqueta: rayo recto al suelo de una estancia
+    const todos = r.intersectObjects(app.picks, false);
+    const muro = r.intersectObjects(muros(), false)[0];
+    const tapa = h => muro && muro.distance < h.distance - 0.02 * (maq.activa ? maq.escala : 1);
+    const hp = todos.find(h => h.distance < lejos && selDe(h.object.userData) && h.object.userData.ambito !== 'estancia');
+    if (hp && !tapa(hp)) return { tipo: 'pick', punto: hp.point, dist: hp.distance, sel: selDe(hp.object.userData) };
+    // RV a tamaño real: arco de teletransporte (también a otra estancia); RM y maqueta: rayo recto al suelo de una estancia
     if (modo === 'vr' && !maq.activa) {
       const hit = trazarArco(c, r); if (!hit) return null;
       const est = estanciaEnLocal(mundo.worldToLocal(hit.clone()));
       return { tipo: 'teleport', punto: hit, dist: hit.distanceTo(r.ray.origin), est, valido: !!est };
     }
-    const hs = r.intersectObjects(app.suelos, false)[0];
+    const hs = [...todos.filter(h => h.object.userData.ambito === 'estancia'), ...r.intersectObjects(app.suelos || [], false)]
+      .sort((a, b) => a.distance - b.distance).find(h => !tapa(h));
     if (hs) {
-      const est = estanciaEnLocal(mundo.worldToLocal(hs.point.clone()));
+      const est = estanciaPorId(app.casa, hs.object.userData.estancia) || estanciaEnLocal(mundo.worldToLocal(hs.point.clone()));
       if (est) return { tipo: 'estancia', punto: hs.point, dist: hs.distance, id: est.id };
     }
     return null;
@@ -645,6 +794,12 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
     const a = apuntar(c);
     if (a?.tipo === 'panel') {
       if (a.boton?.id === 'asa') { arrastre = { c, dist: a.dist }; scene.attach(panel); sucio = true; return; }
+      if (a.boton?.desliz) {
+        const { f, k } = a.boton.desliz, v0 = Number(f.actual?.());
+        deslizando = { c, f, k, b: a.boton, v0, v: valorDesliz(f, (a.px - a.boton.x) / a.boton.w) };
+        if (f.previsualizar) llamar(f.previsualizar, deslizando.v);
+        pulso(c, 0.2, 10); sucio = true; return;
+      }
       if (a.boton?.fn) { try { a.boton.fn(); } catch (err) { registrar('XR: botón', err); } pulso(c); }
       sucio = true; return;
     }
@@ -654,8 +809,16 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
     }
     ejecutar(a, c);
   }
+  // fin del deslizador: lo previsualizado se deshace y se guarda una vez con set() (un solo paso de deshacer)
+  function soltarDeslizador(guardar = true) {
+    const d = deslizando; if (!d) return;
+    deslizando = null; sucio = true;
+    if (d.f.previsualizar) llamar(d.f.previsualizar, d.v0);
+    if (guardar && d.v !== d.v0) llamar(d.f.set, d.v);
+  }
   function soltarGatillo(c) {
     if (arrastre?.c === c) { arrastre = null; sucio = true; }
+    if (deslizando?.c === c) soltarDeslizador();
     const pz = pellizcos.get(c);
     if (pz) {
       pellizcos.delete(c); maq.soltar(c);
@@ -667,9 +830,12 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
     const h = cabeza();
     mundo.position.x += h.x - a.punto.x; mundo.position.z += h.z - a.punto.z;
     mundo.updateMatrixWorld();
-    if (a.est && a.est.id !== app.casaSel?.estancia) app.seleccionar({ ambito: 'estancia', estancia: a.est.id });
+    fijarAncla(ancla?.id ?? a.est?.id);
+    const cambia = !!a.est && a.est.id !== app.casaSel?.estancia;
+    // saltar a otra estancia la elige (una cocina pasa a ser la activa; el ancla la mantiene en su sitio)
+    if (cambia) elegirEstancia(a.est.id, pagina.startsWith('est:') || pagina === 'sel');
     fijarAncla(a.est?.id);
-    nota = a.est ? `Estás en ${a.est.nombre}.` : ''; sucio = true;
+    if (a.est) decir(cambia ? `Estás en ${a.est.nombre}.` : ''); else sucio = true;
   }
   function ejecutar(a, c) {
     if (a?.tipo === 'suelo') {
@@ -683,8 +849,13 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
       accion = null; sucio = true; return;
     }
     if (a?.tipo === 'plano') { alinearAPared(a.plano); return; }
-    if (a?.tipo === 'pick') { app.seleccionar(a.sel); saltarA(a.sel.ambito); if (c) pulso(c, 0.2, 15); return; }
-    if (a?.tipo === 'estancia') { app.seleccionar({ ambito: 'estancia', estancia: a.id }); saltarA('estancia'); if (c) pulso(c, 0.2, 15); return; }
+    if (a?.tipo === 'pick') {
+      // un módulo es de la cocina activa; una pieza, de su estancia
+      if (a.sel.ambito === 'estancia') elegirEstancia(a.sel.estancia);
+      else { app.seleccionar(a.sel); saltarA(a.sel.ambito); }
+      if (c) pulso(c, 0.2, 15); return;
+    }
+    if (a?.tipo === 'estancia') { elegirEstancia(a.id); if (c) pulso(c, 0.2, 15); return; }
     if (a?.tipo === 'teleport') { if (a.valido) { teletransportar(a); if (c) pulso(c, 0.3, 20); } return; }
     if (!accion) app.seleccionar(null);
   }
@@ -775,9 +946,8 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
       aviso('No se pudo entrar en ' + (m === 'ar' ? 'realidad mixta' : 'realidad virtual') + ': ' + (err?.message || err));
       return;
     }
-    modo = m; app.modoXR = m; accion = null; medida = null; nota = ''; ancla = null; paginas.clear();
-    const gs = leerGrupos();
-    pagina = m === 'ar' ? 'sala' : (gs[0] ? 'g:' + gs[0].id : 'casa');
+    modo = m; app.modoXR = m; accion = null; medida = null; nota = ''; ancla = null; paginas.clear(); deslizando = null;
+    pagina = m === 'ar' ? 'f:sala' : (pestanas(leerGrupos()).ctx.find(t => t.id.startsWith('est:'))?.id ?? 'f:ir');
     luces.ligero = true;
     luces.sol.shadow.mapSize.set(1024, 1024); luces.sol.shadow.map?.dispose(); luces.sol.shadow.map = null;
     // RM: fondo transparente para ver la sala real a través de las cámaras
@@ -796,6 +966,7 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
 
   function terminar() {
     sesion = null;
+    soltarDeslizador(false);
     modo = null; app.modoXR = null; accion = null; arrastre = null; hover = null; ancla = null; pellizcos.clear();
     maq.reset();
     mundo.position.set(0, 0, 0); mundo.rotation.set(0, 0, 0); mundo.scale.setScalar(1);
@@ -823,9 +994,19 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
     if (modo === 'ar') actualizarPlanos(frame);
     sticks(dt);
     maq.porFrame(dt, modo);
-    if (maq.activa && pagina === 'vista') { const e = Math.round(1 / maq.escala); if (e !== escalaMostrada) { escalaMostrada = e; sucio = true; } }
-    if (app.casaSel?.estancia !== estPrevia) { estPrevia = app.casaSel?.estancia; sucio = true; }
+    if (maq.activa && pagina === 'f:vista') { const e = Math.round(1 / maq.escala); if (e !== escalaMostrada) { escalaMostrada = e; sucio = true; } }
+    // otra estancia: sus pestañas empiezan en la primera página
+    if (app.casaSel?.estancia !== estPrevia) { estPrevia = app.casaSel?.estancia; for (const k of [...paginas.keys()]) if (k.startsWith('est:') || k === 'sel') paginas.delete(k); sucio = true; }
+    if (nota && performance.now() - notaT > 8000) decir('');
     actualizarResalte();
+    if (deslizando) {
+      // arrastre del deslizador: el rayo sobre el panel da la posición; fuera del panel se mantiene el último valor
+      const h = rayoDe(deslizando.c).intersectObject(panel, false)[0];
+      if (h) {
+        const v = valorDesliz(deslizando.f, (h.uv.x * PW - deslizando.b.x) / deslizando.b.w);
+        if (v !== deslizando.v) { deslizando.v = v; if (deslizando.f.previsualizar) llamar(deslizando.f.previsualizar, v); sucio = true; }
+      }
+    }
     if (arrastre) {
       const r = rayoDe(arrastre.c);
       panel.position.copy(r.ray.origin).addScaledVector(r.ray.direction, arrastre.dist);
@@ -851,6 +1032,20 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
     if (sucio && panel.visible) dibujar();
   }
 
+  // Al activar otra cocina cambia el marco del mundo (app.matrizCasa): se recoloca `mundo` para que la casa no
+  // se mueva en el espacio real (sobre todo en maqueta, donde no hay ancla). K: coords del mundo viejas → nuevas.
+  let matPrevia = null;
+  function compensarMarco() {
+    const M = app.matrizCasa; if (!M) return;
+    const prev = matPrevia; matPrevia = M.clone();
+    if (!prev || !modo || prev.equals(M)) return;
+    const K = M.clone().multiply(prev.clone().invert());
+    mundo.updateMatrix();
+    mundo.matrix.clone().multiply(K.clone().invert()).decompose(mundo.position, mundo.quaternion, mundo.scale);
+    mundo.updateMatrixWorld();
+    maq.cambioMarco(K);
+  }
+
   // depuración / pruebas con el emulador
   app.xr = {
     get modo() { return modo; }, get pagina() { return pagina; }, set pagina(p) { pagina = p; sucio = true; },
@@ -858,13 +1053,14 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
     // pulsa un botón del panel por su texto o id, como si se apuntase y se diese al gatillo
     pulsar(t) { if (sucio) dibujar(); const b = botones.find(q => q.texto === t || q.id === t); if (!b?.fn) return false; b.fn(); sucio = true; dibujar(); return true; },
     irA, teletransportar: (puntoMundo) => teletransportar({ punto: puntoMundo, est: estanciaEnLocal(mundo.worldToLocal(puntoMundo.clone())) }),
-    elegir: (a) => ejecutar(a), apuntar: i => apuntar(mandos[i].c),
+    elegir: (a) => ejecutar(a), apuntar: i => apuntar(mandos[i].c), elegirEstancia, get nota() { return nota; },
+    pestanas: () => pestanas(leerGrupos()).todas.map(t => t.id),
     maqueta: maq, verMaqueta, panel, mandos: mandos.map(m => m.c), lienzo,
   };
 
   return {
     porFrame,
     refrescar() { sucio = true; },
-    alReconstruir() { generacion++; ajustarSombra(); if (modo) { aplicarAncla(); visibilidadSala(); } sucio = true; },
+    alReconstruir() { generacion++; compensarMarco(); ajustarSombra(); if (modo) { aplicarAncla(); visibilidadSala(); } sucio = true; },
   };
 }
