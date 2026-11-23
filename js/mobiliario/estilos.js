@@ -38,9 +38,10 @@ for (const [k, v] of Object.entries(ESTILOS)) v.id = k;
 export const ESTILO_DEFECTO = 'nordico';
 export const DENSIDADES = { minimo: 'Lo justo', completo: 'Completo (piso piloto)' };
 
-// Estado de mobiliario de una estancia con valores por defecto (la UI la hace otro módulo).
-export function leerMobiliario(est) {
-  const m = est?.mobiliario || {};
+// Configuración de mobiliario con valores por defecto. La pone la UI (otra rama) en casa.mobiliario =
+// { estilo, densidad, activo? }; una estancia puede llevar la suya en est.mobiliario y manda sobre la de la casa.
+export function leerMobiliario(casa, est = null) {
+  const m = { ...(casa?.mobiliario || {}), ...(est?.mobiliario || {}) };
   return {
     activo: m.activo !== false,
     estilo: ESTILOS[m.estilo] ? m.estilo : ESTILO_DEFECTO,

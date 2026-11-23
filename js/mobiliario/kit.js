@@ -15,10 +15,22 @@ export function tf(g, { s = null, rx = 0, ry = 0, rz = 0, x = 0, y = 0, z = 0 } 
   return g;
 }
 export const gCaja = (w, h, d) => new THREE.BoxGeometry(w, h, d);
-export const gPanel = (w, h, d, r = 0.01, seg = 2) => new RoundedBoxGeometry(w, h, d, seg, Math.max(1e-4, Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4)));
-export const gCil = (rT, rB, h, seg = 16) => new THREE.CylinderGeometry(rT, rB, h, seg);
-export const gEsfera = (r, ws = 12, hs = 8) => new THREE.SphereGeometry(r, ws, hs);
-export const gTorno = (perfil, seg = 20) => new THREE.LatheGeometry(perfil.map(([r, y]) => new THREE.Vector2(Math.max(0, r), y)), seg);
+// RoundedBoxGeometry es cara de generar (≈1 ms): se guarda por medidas al milímetro y se clona.
+const panelesHechos = new Map();
+export function gPanel(w, h, d, r = 0.01, seg = 2) {
+  const rr = Math.max(1e-4, Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4));
+  const k = [w, h, d, rr].map(v => Math.round(v * 1000)).join(',') + ',' + seg;
+  let g = panelesHechos.get(k);
+  if (!g) { g = new RoundedBoxGeometry(w, h, d, seg, rr); if (panelesHechos.size > 3000) panelesHechos.clear(); panelesHechos.set(k, g); }
+  return g.clone();
+}
+// Primitivas guardadas por parámetros y clonadas (las plantas y los libros repiten miles de veces la misma forma).
+const hechas = new Map();
+const guardada = (k, fn) => { let g = hechas.get(k); if (!g) { if (hechas.size > 4000) hechas.clear(); g = fn(); hechas.set(k, g); } return g.clone(); };
+const mm = v => Math.round(v * 10000);
+export const gCil = (rT, rB, h, seg = 16) => guardada(`c${mm(rT)},${mm(rB)},${mm(h)},${seg}`, () => new THREE.CylinderGeometry(rT, rB, h, seg));
+export const gEsfera = (r, ws = 12, hs = 8) => guardada(`e${mm(r)},${ws},${hs}`, () => new THREE.SphereGeometry(r, ws, hs));
+export const gTorno = (perfil, seg = 20) => guardada('t' + perfil.map(([r, y]) => mm(r) + ':' + mm(y)).join(';') + ',' + seg, () => new THREE.LatheGeometry(perfil.map(([r, y]) => new THREE.Vector2(Math.max(0, r), y)), seg));
 export const gToro = (R, r, rs = 6, ts = 20) => new THREE.TorusGeometry(R, r, rs, ts);
 
 export class Kit {
@@ -55,7 +67,11 @@ export class Kit {
     return mat === 'mob:atlas' ? this.geo(celda, g) : this.L.add(g, mat);
   }
   // ----- madera y tela (UV en metros) -----
-  madera(x, y, z, w, h, d, r = 0.004) { if (w <= 0 || h <= 0 || d <= 0) return null; return r > 0 ? this.L.panel('mob:madera', x, y, z, w, h, d, r) : this.L.caja('mob:madera', x, y, z, w, h, d); }
+  madera(x, y, z, w, h, d, r = 0.004) {
+    if (w <= 0 || h <= 0 || d <= 0) return null;
+    if (r <= 0) return this.L.caja('mob:madera', x, y, z, w, h, d);
+    return this.L.add(tf(gPanel(w, h, d, r), { x: x + w / 2, y: y + h / 2, z: z + d / 2 }), 'mob:madera');
+  }
   maderaGeo(g) { return this.L.add(g, 'mob:madera'); }
   tela(x, y, z, w, h, d, r = 0.04, o = null, seg = 3) {
     if (w <= 0 || h <= 0 || d <= 0) return null;

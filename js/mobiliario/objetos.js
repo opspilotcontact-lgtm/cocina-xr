@@ -71,16 +71,16 @@ export function planta(k, r, x, y, z, tipo = 'ficus', maceta = 'ceramica', escal
   if (tipo === 'ficus' || tipo === 'olivo') {
     const H = (tipo === 'ficus' ? 1.35 : 1.5) * s;
     k.barra('tronco', [x, yb, z], [x + 0.03 * s, yb + H * 0.55, z], 0.022 * s, 6);
-    const ramas = tipo === 'ficus' ? 5 : 6;
+    const ramas = tipo === 'ficus' ? 8 : 7;
     for (let b = 0; b < ramas; b++) {
-      const a = b * 2.2 + r(), y0 = yb + H * (0.35 + 0.08 * b), L = (0.25 + r() * 0.2) * s;
+      const a = b * 2.39996 + r() * 0.5, y0 = yb + H * (0.3 + 0.065 * b), L = (0.22 + r() * 0.22) * s;
       const tx = x + Math.cos(a) * L, tz = z + Math.sin(a) * L, ty = y0 + L * (0.6 + r() * 0.4);
       k.barra('tronco', [x + 0.02 * s, y0, z], [tx, ty, tz], 0.008 * s, 5);
-      const nh = tipo === 'ficus' ? 9 : 11;
+      const nh = tipo === 'ficus' ? 20 : 22;
       for (let i = 0; i < nh; i++) {
-        const aa = r() * Math.PI * 2, d = r() * 0.16 * s;
+        const aa = r() * Math.PI * 2, d = (0.03 + r() * 0.17) * s;
         hoja(k, tipo === 'olivo' ? 'hojaOlivo' : (i % 3 ? 'hoja' : 'hojaOscura'), tx + Math.cos(aa) * d, ty + (r() - 0.3) * 0.18 * s, tz + Math.sin(aa) * d,
-          (tipo === 'olivo' ? 0.07 : 0.11) * s, (tipo === 'olivo' ? 0.018 : 0.06) * s, aa, -0.3 + r() * 0.9);
+          (tipo === 'olivo' ? 0.08 : 0.13) * s, (tipo === 'olivo' ? 0.02 : 0.065) * s, aa, -0.3 + r() * 0.9);
       }
     }
   } else if (tipo === 'monstera') {

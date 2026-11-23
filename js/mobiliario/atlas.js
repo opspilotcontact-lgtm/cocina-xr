@@ -257,7 +257,7 @@ export function matContacto() {
 export function matMadera(estilo) {
   const s = ESTILOS[estilo] || ESTILOS.nordico;
   return una('madera:' + estilo, () => {
-    const t = madera(s.madera, s.vetaSeed, [0.9, 0.9]);
+    const t = madera(s.madera, s.vetaSeed, [0.7, 0.7], 512);
     return new THREE.MeshPhysicalMaterial({ map: t.map, roughnessMap: t.roughnessMap, roughness: 1.05, normalMap: t.normalMap, normalScale: new THREE.Vector2(0.25, 0.25), clearcoat: s.barniz, clearcoatRoughness: 0.4 });
   });
 }

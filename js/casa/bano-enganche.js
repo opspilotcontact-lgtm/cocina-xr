@@ -22,19 +22,24 @@ function huecosReales(casa, est) {
   return { puerta, ventana };
 }
 
+// Estado del baño de una estancia de la casa (lo usan el motor del baño y la decoración de js/mobiliario).
+export function estadoBanoCasa(casa, est, m = marcoEstancia(est)) {
+  const { puerta, ventana } = casa ? huecosReales(casa, est) : {};
+  // El estado propio del baño (si algún día se edita) manda; si no, se reparte solo con las medidas actuales.
+  const base = est.contenido?.tipo === 'bano' ? est.contenido : null;
+  const e = nuevoBano({
+    ancho: Math.round(m.A), fondo: Math.round(m.fondo), alto: est.alto,
+    ...(puerta ? { puerta } : {}), ...(ventana ? { ventana } : {}),
+    estilo: base?.estilo, opciones: base?.opciones,
+  });
+  if (base?.elementos?.length && base.sala?.ancho === e.sala.ancho && base.sala?.fondo === e.sala.fondo) e.elementos = base.elementos;
+  else autodistribuir(e);
+  return e;
+}
+
 export function engancharBano(getCasa) {
   registrarContenido('bano', (est, m) => {
-    const casa = getCasa();
-    const { puerta, ventana } = casa ? huecosReales(casa, est) : {};
-    // El estado propio del baño (si algún día se edita) manda; si no, se reparte solo con las medidas actuales.
-    const base = est.contenido?.tipo === 'bano' ? est.contenido : null;
-    const e = nuevoBano({
-      ancho: Math.round(m.A), fondo: Math.round(m.fondo), alto: est.alto,
-      ...(puerta ? { puerta } : {}), ...(ventana ? { ventana } : {}),
-      estilo: base?.estilo, opciones: base?.opciones,
-    });
-    if (base?.elementos?.length && base.sala?.ancho === e.sala.ancho && base.sala?.fondo === e.sala.fondo) e.elementos = base.elementos;
-    else autodistribuir(e);
+    const e = estadoBanoCasa(getCasa(), est, m);
     // la casa ya pone suelo y techo; el baño aporta sanitarios, mueble, mampara y alicatado
     const r = construirBano(e, { suelo: false, revestimientos: true });
     return { lote: r.lote, picks: r.picks, mats: materialesBano(e) };
