@@ -118,8 +118,13 @@ console.log('Baño editable');
   const app = crearApp('piso3');
   const bano = porNombre(app, 'Baño');
   ok(bano.contenido?.tipo === 'bano' && bano.contenido.elementos.length >= 3, 'el baño se materializa en estancia.contenido');
-  ok(bano.contenido.puerta.pared && bano.contenido.sala.ancho === 210, `sala y puerta salen de la casa (${bano.contenido.sala.ancho}×${bano.contenido.sala.fondo})`);
-  ok(bano.contenido.puerta.abre === 'corredera', 'la corredera de la casa no barre el suelo');
+  // el baño del piso3 mide 160×300 libres y tiene puerta abatible al pasillo
+  ok(bano.contenido.puerta.pared && bano.contenido.sala.ancho === 160, `sala y puerta salen de la casa (${bano.contenido.sala.ancho}×${bano.contenido.sala.fondo})`);
+  ok(bano.contenido.puerta.abre !== 'corredera', 'la abatible de la casa barre su arco');
+  const puerta = app.casa.huecos.find(h => h.estancia === bano.id && h.tipo === 'abatible');
+  app.cambiarCasa(c => { c.huecos.find(h => h.id === puerta.id).tipo = 'corredera'; });
+  ok(porNombre(app, 'Baño').contenido.puerta.abre === 'corredera', 'la corredera de la casa no barre el suelo');
+  app.deshacer();
   app.seleccionar({ ambito: 'estancia', estancia: bano.id });
   const gs = grupos(app);
   ok(['bano-distribucion', 'bano-piezas', 'bano-revision', 'bano-revestimientos', 'bano-griferia', 'estancia', 'estancia-huecos'].every(id => gs.some(g => g.id === id)), 'grupos del baño');
