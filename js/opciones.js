@@ -14,6 +14,7 @@
 //    | { tipo:'accion', id, label, fn(), peligro?:boolean }
 //    | { tipo:'texto',  texto }
 //   Extras opcionales (quien no los entienda los ignora):
+//     soloEscritorio    true → la fila no sale en las gafas (mueve la cámara del PC o abre el plano 2D)
 //     accion.confirmar  texto para pedir confirmación antes (el escritorio la pide; en las gafas basta con deshacer)
 //     texto.nivel       'error' | 'aviso' | 'info'
 //     num.deslizador    true → mejor como deslizador; num.previsualizar(n) cambia en vivo SIN guardar ni deshacer
@@ -127,8 +128,8 @@ function gruposCasa(app) {
     {
       id: 'casa-resumen', ambito: 'casa', titulo: casa.nombre || 'Vivienda', filas: [
         texto(`${casa.estancias.length} estancia${casa.estancias.length > 1 ? 's' : ''} · ${m2(sup.construida)} a ejes · ${m2(sup.util)} útiles aprox.`),
-        accion('plano', 'Editar plano', () => app.vista('plano')),
-        accion('general', 'Ver toda la casa', () => app.vista('general')),
+        accion('plano', 'Editar plano', () => app.vista('plano'), { soloEscritorio: true }),
+        accion('general', 'Ver toda la casa', () => app.vista('general'), { soloEscritorio: true }),
       ],
     },
     {
@@ -136,7 +137,7 @@ function gruposCasa(app) {
       id: 'casa-estancias', ambito: 'casa', titulo: 'Estancias', filas: [
         ciclo('estancia', 'Estancia', () => casa.estancias.map(e => ({ v: e.id, label: e.nombre, muestra: (TIPOS[e.tipo] || TIPOS.otro).color })),
           () => est?.id, v => app.seleccionar({ ambito: 'estancia', estancia: v })),
-        est && accion('entrar', `Entrar en ${est.nombre}`, () => app.entrar(est.id)),
+        est && accion('entrar', `Entrar en ${est.nombre}`, () => app.entrar(est.id), { soloEscritorio: true }),
       ].filter(Boolean),
     },
     {

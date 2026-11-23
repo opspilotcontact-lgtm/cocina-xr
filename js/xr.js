@@ -264,7 +264,7 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
   // grupos de opciones (comunes con el escritorio); un fallo ahí no debe dejar el panel en blanco
   const erroresVistos = new Set();
   function registrar(msg, err) { const k = msg + String(err?.message || err); if (!erroresVistos.has(k)) { erroresVistos.add(k); console.error(msg, err); } }
-  function leerGrupos() { try { return (gruposOpciones(app) || []).filter(g => g && g.id != null && Array.isArray(g.filas)); } catch (err) { registrar('XR: grupos() falló', err); return []; } }
+  function leerGrupos() { try { return (gruposOpciones(app) || []).filter(g => g && g.id != null && Array.isArray(g.filas)).map(g => ({ ...g, filas: g.filas.filter(f => f && !f.soloEscritorio) })); } catch (err) { registrar('XR: grupos() falló', err); return []; } }
   // set()/fn() de opciones.js pueden devolver un texto de aviso
   function llamar(fn, ...args) {
     if (typeof fn !== 'function') return undefined;
