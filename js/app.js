@@ -109,7 +109,12 @@ const app = {
   instantanea,
   deshacer() { if (!pasado.length) return; futuro.push(JSON.stringify(casa)); restaurar(pasado.pop()); },
   rehacer() { if (!futuro.length) return; pasado.push(JSON.stringify(casa)); restaurar(futuro.pop()); },
-  seleccionar(sel) { seleccion = sel; marcarSeleccion(); ui.refrescar(); xr.refrescar(); },
+  seleccionar(sel) {
+    // [xr-estancias] formas del contrato de picks: { ambito:'modulo'|'elemento'|'estancia', … }
+    if (sel?.ambito === 'estancia') { casaSel = { estancia: sel.estancia, borde: null, hueco: null }; marcarEstancia(); plano.refrescar(); sel = null; }
+    else if (sel?.ambito === 'elemento') { casaSel = { estancia: sel.estancia, borde: null, hueco: null }; marcarEstancia(); plano.refrescar(); }
+    seleccion = sel; marcarSeleccion(); ui.refrescar(); xr.refrescar();
+  },
   seleccionarCasa(sel) {
     casaSel = { estancia: null, borde: null, hueco: null, ...sel };
     marcarEstancia(); ui.refrescar(); plano.refrescar();
@@ -143,6 +148,9 @@ const app = {
   get cocinaGrupo() { return cocinaGrupo; },
   get dims() { const e = app.estado; return { W: e.sala.A / 100, D: fondoSala(e), H: e.sala.alto / 100 }; },
   get cajaCasa() { return cajaMundo; },
+  // [xr-estancias] planta (m) → coords del mundo, y suelos de la casa (fusionados por material)
+  get matrizCasa() { return matrizCasa; },
+  get suelos() { return casaR?.suelos || []; },
   // mallas que se dibujan (sin contar picks invisibles ni la marca de selección)
   mallas() {
     const r = { total: 0, casa: 0, cocina: 0, sombras: 0, instancias: 0 };

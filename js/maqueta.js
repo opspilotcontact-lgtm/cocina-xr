@@ -1,4 +1,4 @@
-// Modo maqueta (RV y RM): la cocina entera a escala 1:20 sobre una mesa, como una casa de muñecas.
+// Modo maqueta (RV y RM): la vivienda entera a escala 1:20 sobre una mesa, como una casa de muñecas.
 // Se agarra con el botón lateral (squeeze) o, con las manos, pellizcando y manteniendo:
 //   una mano = mover y girar; dos manos = escalar (distancia entre manos) y girar alrededor del punto medio.
 // Todo se hace transformando el grupo `mundo` (posición, giro en Y y escala uniforme).
@@ -12,7 +12,8 @@ const yawQ = a => new THREE.Quaternion().setFromAxisAngle(UP, a);
 // ángulo en el plano XZ con el mismo convenio que un giro en Y de three.js
 const angXZ = v => Math.atan2(-v.z, v.x);
 
-export function crearMaqueta({ app, scene, camera, mundo, luces, sombraSuelo, sueloY, mesas, alSalir }) {
+// `vuelta()` → { P, d }: punto local donde quedarse al volver a tamaño real y dirección local a la que mirar.
+export function crearMaqueta({ app, scene, camera, mundo, luces, sombraSuelo, sueloY, mesas, alSalir, vuelta }) {
   let activa = false;
   let escalaMaqueta = ESCALA_MAQUETA;   // la última escala de maqueta usada (para volver a ella)
   let anim = null;
@@ -34,7 +35,9 @@ export function crearMaqueta({ app, scene, camera, mundo, luces, sombraSuelo, su
     const f = camera.getWorldDirection(new THREE.Vector3()).setY(0);
     return f.lengthSq() < 1e-6 ? new THREE.Vector3(0, 0, -1) : f.normalize();
   };
-  const centroLocal = () => { const { W, D } = app.dims; return new THREE.Vector3(W / 2, 0, D / 2); };
+  // centro y tamaño de la casa entera (coords del mundo = marco de la cocina activa)
+  const caja = () => { const c = app.cajaCasa; if (c) return c; const { W, D } = app.dims; return { x0: 0, x1: W, z0: 0, z1: D, cx: W / 2, cz: D / 2 }; };
+  const centroLocal = () => { const c = caja(); return new THREE.Vector3(c.cx, 0, c.cz); };
   const aMundo = P => P.clone().multiplyScalar(mundo.scale.x).applyQuaternion(mundo.quaternion).add(mundo.position);
 
   // coloca `mundo` para que el punto local P quede en Pw con giro q y escala s
@@ -87,14 +90,14 @@ export function crearMaqueta({ app, scene, camera, mundo, luces, sombraSuelo, su
     return enMesa;
   }
 
-  // vuelta a 1:1 dentro de la cocina, mirando a la pared A
+  // vuelta a 1:1 dentro de la estancia elegida, mirando a su pared principal
   function tamanoReal() {
     if (!activa) return;
     if (!anim) escalaMaqueta = THREE.MathUtils.clamp(mundo.scale.x, ESCALA_MIN, 0.2);
-    const { W, D } = app.dims;
-    const P = new THREE.Vector3(W / 2, 0, Math.min(THREE.MathUtils.clamp(D - 0.6, 1.2, 2.2), D - 0.3));
+    let v = vuelta?.();
+    if (!v) { const { W, D } = app.dims; v = { P: new THREE.Vector3(W / 2, 0, Math.min(THREE.MathUtils.clamp(D - 0.6, 1.2, 2.2), D - 0.3)), d: new THREE.Vector3(0, 0, -1) }; }
     const h = cabeza(), f = adelante();
-    animar(P, new THREE.Vector3(h.x, sueloY(), h.z), yawQ(Math.atan2(-f.x, -f.z)), 1, 1.2, () => { activa = false; restaurar(); });
+    animar(v.P, new THREE.Vector3(h.x, sueloY(), h.z), yawQ(angXZ(f) - angXZ(v.d)), 1, 1.2, () => { activa = false; restaurar(); });
   }
 
   // salida inmediata (al terminar la sesión o antes de colocar/alinear)
@@ -209,7 +212,7 @@ export function crearMaqueta({ app, scene, camera, mundo, luces, sombraSuelo, su
     const cam = mundo.worldToLocal(cabeza());
     const v = new THREE.Vector3();
     for (const o of g.children) {
-      if (o.name === 'techo') o.visible = false;
+      if (o.name === 'techo' || o.name === 'downlight') o.visible = false;
       else if (o.userData?.n && o.userData?.punto) o.visible = v.copy(cam).sub(o.userData.punto).dot(o.userData.n) > -0.05;
       else o.visible = true;
     }
@@ -228,7 +231,7 @@ export function crearMaqueta({ app, scene, camera, mundo, luces, sombraSuelo, su
     sombraSuelo.position.y = -0.021;
     // RV: peana bajo la maqueta y un suelo de referencia
     const C = aMundo(centroLocal());
-    const { W, D } = app.dims;
+    const c = caja(), W = c.x1 - c.x0, D = c.z1 - c.z0;
     const arriba = C.y - 0.02 * s, alto = arriba - sueloY();
     peana.visible = modo === 'vr' && alto > 0.05 && s < 0.5;
     if (peana.visible) {
