@@ -23,6 +23,7 @@ import {
 import { construirCasa, materialesCasa, ocultarTabiques } from './casa/construir-casa.js';
 import { montarPlano } from './casa/plano.js';
 import { engancharBano } from './casa/bano-enganche.js';
+import { engancharMobiliario } from './mobiliario/index.js';   // [feat/amueblado] piso piloto (ver reconstruir)
 import { montarUI, aviso as avisar } from './ui.js';
 import { montarXR } from './xr.js';
 
@@ -143,9 +144,10 @@ const app = {
   get cocinaGrupo() { return cocinaGrupo; },
   get dims() { const e = app.estado; return { W: e.sala.A / 100, D: fondoSala(e), H: e.sala.alto / 100 }; },
   get cajaCasa() { return cajaMundo; },
+  get mobiliario() { return mobiliario; },   // [feat/amueblado] { grupo, mallas, piezas, ms, cache }
   // mallas que se dibujan (sin contar picks invisibles ni la marca de selección)
   mallas() {
-    const r = { total: 0, casa: 0, cocina: 0, sombras: 0, instancias: 0 };
+    const r = { total: 0, casa: 0, cocina: 0, sombras: 0, instancias: 0, mobiliario: mobiliario?.mallas ?? 0 };
     casaR?.grupo.traverse(o => { if (o.isMesh) { r.total++; r.casa++; if (o.userData.sombraProxy) r.sombras++; if (o.isInstancedMesh) r.instancias += o.count; } });
     cocinaGrupo?.traverse(o => { if (o.isMesh) { r.total++; r.cocina++; } });
     return r;
@@ -155,6 +157,7 @@ const app = {
 function guardar() { try { localStorage.setItem(CLAVE_CASA, JSON.stringify(casa)); } catch { /* sin almacenamiento */ } }
 
 // ---------- construcción ----------
+let mobiliario = null;
 let casaR = null, cocinaGrupo = null, mats = null, cajaMundo = null, matrizCasa = new THREE.Matrix4();
 const picksGrupo = new THREE.Group(); picksGrupo.name = 'picks'; mundo.add(picksGrupo);
 const marcaSel = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#ff6a2b', depthTest: false, transparent: true }));
@@ -174,6 +177,10 @@ function reconstruir() {
   for (const p of [...picksGrupo.children]) { picksGrupo.remove(p); p.geometry.dispose(); }
 
   casaR = construirCasa(casa, mc, { cocinaId: ec.id });
+  // [feat/amueblado] Piso piloto: muebles en todas las estancias menos la cocina, fusionados por material dentro de
+  // casaR.grupo. Lee casa.mobiliario = { estilo, densidad } (por defecto nórdico, completo). Enganche mínimo de esta
+  // rama: en la fusión con la de la UI se deja esta misma llamada tras cada construirCasa.
+  mobiliario = engancharMobiliario(casa, casaR, { cocinaId: ec.id });
   const m = marcoEstancia(ec);
   matrizCasa = matrizTramo([m.origen[0] / 100, m.origen[1] / 100], m.dir).invert();
   casaR.grupo.applyMatrix4(matrizCasa);
