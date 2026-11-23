@@ -414,65 +414,94 @@ function montar(nombre, defs, huecos) {
   return casa;
 }
 
+// Pisos de dos crujías, como los de cualquier bloque español: la fila de arriba (y = 0) da al patio (cocina, baño y
+// dormitorios secundarios), la de abajo a la calle (salón y dormitorio principal) y entre las dos va la banda de
+// recibidor y pasillo (1 m libre). La entrada está en el lado izquierdo (x = 0), que es el rellano: ahí no hay
+// ventanas. Los tabiques transversales siguen la misma línea a los dos lados del pasillo siempre que se puede, todas
+// las puertas abren hacia la estancia a la que dan (no barren el pasillo) y los baños abren al pasillo, nunca a la
+// cocina. La cocina deja libres las paredes A (ventana) y B (izquierda) para la L: su puerta va en la pared D.
+// Bordes de un rect(x0, y0, x1, y1): 0 = arriba (y0, de x0 a x1), 1 = derecha (x1, de y0 a y1),
+// 2 = abajo (y1, de x1 a x0), 3 = izquierda (x0, de y1 a y0); «pos» se mide desde el inicio del borde.
 export const PLANTILLAS = {
   soloCocina: { nombre: 'Solo cocina', sub: 'una estancia, como antes', crear: () => casaDesdeCocina(estadoInicial()) },
-  piso2: {
-    nombre: 'Piso 2 dormitorios', sub: '≈ 72 m² · salón, cocina, 2 dormitorios, baño',
-    // bordes de un rect(): 0 = arriba (y0), 1 = derecha (x1), 2 = abajo (y1), 3 = izquierda (x0)
-    crear: () => montar('Piso 2 dormitorios', [
-      ['salon', 'salon', rect(0, 0, 440, 720), { nombre: 'Salón-comedor' }],
-      ['cocina', 'cocina', rect(440, 0, 700, 330)],
-      ['dorm1', 'dormitorio', rect(700, 0, 1000, 330), { nombre: 'Dormitorio principal' }],
-      ['pasillo', 'pasillo', rect(440, 330, 1000, 440)],
-      ['dorm2', 'dormitorio', rect(440, 440, 760, 720), { nombre: 'Dormitorio 2', pintura: 'salvia' }],
-      ['bano', 'bano', rect(760, 440, 1000, 720)],
+  piso1: {
+    nombre: 'Piso 1 dormitorio', sub: '≈ 55 m² · salón, cocina, dormitorio, baño',
+    crear: () => montar('Piso 1 dormitorio', [
+      ['cocina', 'cocina', rect(0, 0, 300, 300)],
+      ['bano', 'bano', rect(300, 0, 480, 300)],
+      ['dorm', 'dormitorio', rect(480, 0, 760, 410)],
+      ['recibidor', 'recibidor', rect(0, 300, 480, 410)],
+      ['salon', 'salon', rect(0, 410, 760, 730), { nombre: 'Salón-comedor' }],
     ], [
-      ['abatible', 'salon', 2, 150, { ancho: 90, mano: 'derecha' }],          // entrada a la vivienda
-      ['ventana', 'salon', 0, 90, { ancho: 180, alto: 140, antepecho: 90 }],
-      ['ventana', 'salon', 3, 300, { ancho: 120 }],
-      ['abatible', 'salon', 1, 345, { ancho: 80 }],                          // salón ↔ pasillo
-      ['ventana', 'cocina', 0, 70, { ancho: 110, alto: 120, antepecho: 105 }],
-      ['abatible', 'cocina', 2, 25, { ancho: 80, mano: 'derecha' }],
-      ['ventana', 'dorm1', 0, 90, { ancho: 120 }],
-      ['abatible', 'dorm1', 2, 210, { ancho: 80 }],
-      ['abatible', 'dorm2', 0, 30, { ancho: 80 }],
-      ['ventana', 'dorm2', 2, 100, { ancho: 120 }],
-      ['corredera', 'bano', 0, 20, { ancho: 75 }],
-      ['ventana', 'bano', 2, 90, { ancho: 60, alto: 60, antepecho: 150 }],
+      ['abatible', 'recibidor', 3, 15, { ancho: 85, mano: 'derecha' }],          // entrada desde el rellano
+      ['abatible', 'cocina', 2, 20, { ancho: 80 }],
+      ['ventana', 'cocina', 0, 110, { ancho: 120, alto: 120, antepecho: 105 }],
+      ['abatible', 'bano', 2, 20, { ancho: 70 }],
+      ['ventana', 'bano', 0, 55, { ancho: 60, alto: 60, antepecho: 150 }],
+      ['abatible', 'dorm', 3, 15, { ancho: 80 }],                                // al fondo del recibidor
+      ['ventana', 'dorm', 0, 75, { ancho: 120 }],
+      ['abatible', 'salon', 0, 150, { ancho: 90 }],                              // recibidor ↔ salón
+      ['balconera', 'salon', 2, 140, { ancho: 160 }],
+      ['ventana', 'salon', 2, 500, { ancho: 140 }],
+    ]),
+  },
+  piso2: {
+    nombre: 'Piso 2 dormitorios', sub: '≈ 70 m² · salón, cocina, 2 dormitorios, 1 baño',
+    crear: () => montar('Piso 2 dormitorios', [
+      ['cocina', 'cocina', rect(0, 0, 400, 300)],
+      ['bano', 'bano', rect(400, 0, 580, 300)],
+      ['dorm2', 'dormitorio', rect(580, 0, 860, 410), { nombre: 'Dormitorio 2', pintura: 'salvia' }],
+      ['recibidor', 'recibidor', rect(0, 300, 580, 410), { nombre: 'Recibidor y distribuidor' }],
+      ['salon', 'salon', rect(0, 410, 480, 810), { nombre: 'Salón-comedor' }],
+      ['dorm1', 'dormitorio', rect(480, 410, 860, 810), { nombre: 'Dormitorio principal' }],
+    ], [
+      ['abatible', 'recibidor', 3, 15, { ancho: 85, mano: 'derecha' }],          // entrada desde el rellano
+      ['abatible', 'cocina', 2, 20, { ancho: 80 }],
+      ['ventana', 'cocina', 0, 140, { ancho: 120, alto: 120, antepecho: 105 }],
+      ['abatible', 'salon', 0, 150, { ancho: 90 }],                              // recibidor ↔ salón
+      ['abatible', 'bano', 2, 15, { ancho: 70 }],
+      ['ventana', 'bano', 0, 55, { ancho: 60, alto: 60, antepecho: 150 }],
+      ['abatible', 'dorm2', 3, 15, { ancho: 80 }],                               // al fondo del distribuidor
+      ['ventana', 'dorm2', 0, 75, { ancho: 120 }],
+      ['abatible', 'dorm1', 0, 10, { ancho: 80 }],
+      ['ventana', 'dorm1', 2, 120, { ancho: 140 }],
+      ['balconera', 'salon', 2, 60, { ancho: 140 }],
+      ['ventana', 'salon', 2, 300, { ancho: 120 }],
     ]),
   },
   piso3: {
-    nombre: 'Piso 3 dormitorios', sub: '≈ 92 m² · 2 baños y terraza',
+    nombre: 'Piso 3 dormitorios', sub: '≈ 89 m² · baño, dormitorio en suite con vestidor y terraza',
     crear: () => montar('Piso 3 dormitorios', [
-      ['terraza', 'terraza', rect(0, -150, 450, 0)],
-      ['salon', 'salon', rect(0, 0, 450, 500), { nombre: 'Salón-comedor' }],
-      ['cocina', 'cocina', rect(450, 0, 750, 330)],
-      ['dorm1', 'dormitorio', rect(750, 0, 1150, 330), { nombre: 'Dormitorio principal' }],
-      ['pasillo', 'pasillo', [[450, 330], [1150, 330], [1150, 450], [560, 450], [560, 800], [450, 800]]],
-      ['dorm3', 'dormitorio', rect(0, 500, 450, 800), { nombre: 'Dormitorio 3', pintura: 'niebla' }],
-      ['bano', 'bano', rect(560, 450, 780, 680), { nombre: 'Baño' }],
-      ['aseo', 'bano', rect(560, 680, 780, 800), { nombre: 'Aseo' }],
-      ['dorm2', 'dormitorio', rect(780, 450, 1150, 800), { nombre: 'Dormitorio 2', pintura: 'salvia' }],
+      ['cocina', 'cocina', rect(0, 0, 360, 310)],
+      ['bano', 'bano', rect(360, 0, 530, 310)],
+      ['dorm3', 'dormitorio', rect(530, 0, 820, 310), { nombre: 'Dormitorio 3', pintura: 'niebla' }],
+      ['dorm2', 'dormitorio', rect(820, 0, 1080, 420), { nombre: 'Dormitorio 2', pintura: 'salvia' }],
+      ['recibidor', 'recibidor', rect(0, 310, 360, 420)],
+      ['pasillo', 'pasillo', rect(360, 310, 820, 420)],
+      ['salon', 'salon', rect(0, 420, 530, 820), { nombre: 'Salón-comedor' }],
+      ['dorm1', 'dormitorio', rect(530, 420, 920, 820), { nombre: 'Dormitorio principal' }],
+      ['vestidor', 'otro', rect(920, 420, 1080, 580), { nombre: 'Vestidor', suelo: 'tarima' }],
+      ['suite', 'bano', rect(920, 580, 1080, 820), { nombre: 'Baño en suite' }],
+      ['terraza', 'terraza', rect(0, 820, 530, 970)],
     ], [
-      // pasillo en L: 0 arriba, 1 derecha, 2 abajo (tramo largo), 3 x=560, 4 abajo (entrada), 5 x=450
-      ['abatible', 'pasillo', 4, 10, { ancho: 90, mano: 'derecha' }],          // entrada
-      ['abatible', 'salon', 1, 360, { ancho: 80 }],                           // salón ↔ pasillo
-      ['balconera', 'salon', 0, 100, { ancho: 200 }],                          // salón ↔ terraza
-      ['ventana', 'salon', 3, 150, { ancho: 140 }],
-      ['ventana', 'cocina', 0, 90, { ancho: 120, alto: 120, antepecho: 105 }],
-      ['abatible', 'cocina', 2, 25, { ancho: 80, mano: 'derecha' }],
-      ['ventana', 'dorm1', 0, 140, { ancho: 140 }],
-      ['ventana', 'dorm1', 1, 110, { ancho: 100 }],
-      ['abatible', 'dorm1', 2, 290, { ancho: 80 }],
-      ['abatible', 'dorm3', 1, 30, { ancho: 80, mano: 'derecha' }],
-      ['ventana', 'dorm3', 2, 160, { ancho: 120 }],
-      ['ventana', 'dorm3', 3, 100, { ancho: 100 }],
-      ['corredera', 'bano', 3, 140, { ancho: 75 }],
-      ['abatible', 'aseo', 3, 30, { ancho: 70 }],
-      ['ventana', 'aseo', 2, 80, { ancho: 60, alto: 60, antepecho: 150 }],
-      ['abatible', 'dorm2', 0, 260, { ancho: 80 }],
-      ['ventana', 'dorm2', 1, 120, { ancho: 120 }],
-      ['ventana', 'dorm2', 2, 120, { ancho: 120 }],
+      ['abatible', 'recibidor', 3, 15, { ancho: 85, mano: 'derecha' }],          // entrada desde el rellano
+      ['abatible', 'cocina', 2, 20, { ancho: 80 }],
+      ['ventana', 'cocina', 0, 120, { ancho: 120, alto: 120, antepecho: 105 }],
+      ['abatible', 'salon', 0, 150, { ancho: 90 }],                              // recibidor ↔ salón
+      ['abatible', 'pasillo', 3, 15, { ancho: 80 }],            // paso a la zona de noche
+      ['abatible', 'bano', 2, 15, { ancho: 70 }],
+      ['ventana', 'bano', 0, 50, { ancho: 60, alto: 60, antepecho: 150 }],
+      ['abatible', 'dorm3', 2, 200, { ancho: 80, mano: 'derecha' }],
+      ['ventana', 'dorm3', 0, 85, { ancho: 120 }],
+      ['abatible', 'dorm2', 3, 15, { ancho: 80 }],                               // al fondo del pasillo
+      ['ventana', 'dorm2', 0, 65, { ancho: 120 }],
+      ['abatible', 'dorm1', 0, 10, { ancho: 80 }],
+      ['ventana', 'dorm1', 2, 125, { ancho: 140 }],
+      ['corredera', 'vestidor', 3, 80, { ancho: 70 }],                           // vestidor y baño en suite: desde el dormitorio
+      ['abatible', 'suite', 3, 155, { ancho: 70 }],
+      ['ventana', 'suite', 2, 50, { ancho: 60, alto: 60, antepecho: 150 }],
+      ['balconera', 'salon', 2, 170, { ancho: 200 }],                            // salón ↔ terraza
+      ['ventana', 'salon', 2, 390, { ancho: 120 }],
     ]),
   },
 };

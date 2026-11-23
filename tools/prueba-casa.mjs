@@ -105,10 +105,13 @@ for (const [id, p] of Object.entries(PLANTILLAS)) {
   const c = p.crear();
   const e = errores(c);
   const s = superficies(c);
+  const av = validar(c).filter(v => v.nivel !== "error");
+  ok(av.length === 0, `${p.nombre}: sin avisos${av.length ? " → " + av.map(x => x.texto).join("; ") : ""}`);
   ok(e.length === 0, `${p.nombre}: sin errores${e.length ? ' → ' + e.map(x => x.texto).join('; ') : ''} (${s.construida.toFixed(1)} m² a ejes, ${s.util.toFixed(1)} útiles)`);
   const k = cocinaActiva(c);
   ok(k && infoTramos(k.cocina).every(t => t.libre >= 0), `${p.nombre}: la cocina cabe (${k.cocina.forma}, ${k.cocina.sala.A}×${k.cocina.sala.fondo})`);
   if (id === 'piso2') ok(Math.abs(s.construida - 70) < 6, `${p.nombre}: ronda los 70 m²`);
+  if (id === 'piso1') ok(Math.abs(s.construida - 55) < 6, `${p.nombre}: ronda los 55 m²`);
   if (id === 'piso3') ok(Math.abs(s.construida - 90) < 6, `${p.nombre}: ronda los 90 m²`);
 }
 
@@ -117,11 +120,11 @@ console.log('Edición de planta');
   const c = PLANTILLAS.piso3.crear();
   const pas = c.estancias.find(e => e.tipo === 'pasillo');
   moverBorde(c, pas.id, 0, 20); // el tabique de arriba del pasillo sube 20 cm
-  const coc = c.estancias.find(e => e.tipo === 'cocina'), d1 = c.estancias.find(e => e.nombre === 'Dormitorio principal');
-  ok(coc.poligono.some(p => p[0] === 750 && p[1] === 310) && d1.poligono.some(p => p[0] === 750 && p[1] === 310), 'mover un tabique arrastra los vértices que tiene encima (también el del encuentro en T)');
+  const coc = c.estancias.find(e => e.tipo === 'cocina'), d3 = c.estancias.find(e => e.nombre === 'Dormitorio 3');
+  ok(coc.poligono.some(p => p[0] === 360 && p[1] === 290) && d3.poligono.some(p => p[0] === 530 && p[1] === 290), 'mover un tabique arrastra los vértices que tiene encima (también el del encuentro en T)');
   ok(errores(c).length === 0, 'y la casa sigue sin errores');
-  moverVertice(c, [1150, 800], [1200, 800]);
-  ok(c.estancias.find(e => e.nombre === 'Dormitorio 2').poligono.some(p => p[0] === 1200), 'mover un vértice lo mueve en todas las estancias que lo comparten');
+  moverVertice(c, [530, 820], [530, 840]); // esquina común de salón, dormitorio principal y terraza
+  ok(['Salón-comedor', 'Dormitorio principal', 'Terraza'].every(n => c.estancias.find(e => e.nombre === n).poligono.some(p => p[0] === 530 && p[1] === 840)), 'mover un vértice lo mueve en todas las estancias que lo comparten');
   const n = c.estancias.length;
   const nueva = edCasa.anadirEstancia(c, 'dormitorio');
   ok(c.estancias.length === n + 1 && errores(c).length === 0, 'añadir estancia la pega a la casa sin solapes');
