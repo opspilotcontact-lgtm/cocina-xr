@@ -82,9 +82,21 @@ export function montarXR(app, { renderer, scene, camera, mundo, luces, fondo }) 
   function puntoDeEstar(id) {
     const ml = marcoLocal(id); if (!ml) return null;
     const { est, m } = ml;
-    const z = Math.max(40, Math.min(m.fondo * 0.7, m.fondo - 60));
-    let p = localAPlano(m, [m.A / 2, z]);
-    if (!puntoEnPoligono(p, est.poligono)) p = puntoInterior(est.poligono);
+    // fuera de las cajas de los muebles/piezas (en un baño pequeño el centro puede caer dentro de la ducha
+    // y desde dentro de una caja el rayo no la elige)
+    const libre = p => {
+      const v = aLocal(p, 0.9);
+      return !app.picks.some(k => {
+        if (k.userData.ambito === 'estancia') return false;
+        if (!k.geometry.boundingBox) k.geometry.computeBoundingBox();
+        return k.geometry.boundingBox.containsPoint(v);
+      });
+    };
+    const zMax = Math.max(40, m.fondo - 45);
+    const cands = [];
+    for (const fz of [0.7, 0.55, 0.85, 0.4]) for (const fx of [0.5, 0.35, 0.65]) cands.push(localAPlano(m, [m.A * fx, Math.min(Math.max(40, m.fondo * fz), zMax)]));
+    const dentro = cands.filter(p => puntoEnPoligono(p, est.poligono));
+    let p = dentro.find(libre) || dentro[0] || puntoInterior(est.poligono);
     return { P: aLocal(p), d: ml.n.clone().negate() };
   }
 
