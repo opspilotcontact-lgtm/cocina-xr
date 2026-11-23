@@ -132,9 +132,10 @@ function pintarMadera(color, seed, N = 1024) {
   return [c, cr];
 }
 
-export function madera(color, seed = 7, metros = [0.8, 0.8]) {
-  return cacheada(`madera:${color}:${seed}`, () => {
-    const [c, cr] = pintarMadera(color, seed);
+// N: lado del lienzo (1024 por defecto; el mobiliario usa 512 para no tardar en las gafas)
+export function madera(color, seed = 7, metros = [0.8, 0.8], N = 1024) {
+  return cacheada(`madera:${color}:${seed}${N === 1024 ? '' : ':' + N}`, () => {
+    const [c, cr] = pintarMadera(color, seed, N);
     return { map: aTextura(c, metros), roughnessMap: aTextura(cr, metros, false), normalMap: aTextura(normalDesde(cr, 1.2), metros, false) };
   });
 }
