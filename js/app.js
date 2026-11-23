@@ -12,7 +12,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { estadoInicial, autodistribuir, fondoSala, SUELOS } from './modelo.js';
-import { materiales } from './materiales.js';
+import { materiales, setEnv, setContacto } from './materiales.js';
 import { construirCocina } from './cocina.js';
 import { Luces } from './sala.js';
 import { fusionar, liberar, matrizTramo } from './geo.js';
@@ -22,6 +22,7 @@ import {
 } from './casa/modelo-casa.js';
 import { construirCasa, materialesCasa, ocultarTabiques } from './casa/construir-casa.js';
 import { montarPlano } from './casa/plano.js';
+import { engancharBano } from './casa/bano-enganche.js';
 import { montarUI, aviso as avisar } from './ui.js';
 import { montarXR } from './xr.js';
 
@@ -207,6 +208,7 @@ function reconstruir() {
   marcarSeleccion(); marcarEstancia();
   aplicarLuz();
   luces.actualizarFocos(mundo.worldToLocal(camera.position.clone()));
+  capturarEntorno();
   xr?.alReconstruir?.();
   const n = app.mallas();
   const el = document.getElementById('mallas'); if (el) el.textContent = `${n.total} mallas`;
@@ -394,7 +396,29 @@ addEventListener('resize', () => {
 
 const reloj = new THREE.Clock();
 let fpsT = 0, fpsN = 0, lentos = 0, autoBajada = false, focosT = 0;
+// Reflejos de la propia sala: una foto cúbica tras cada reconstrucción (~50 ms) para encimera, inox y cristal.
+const rtEntorno = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+const camEntorno = new THREE.CubeCamera(0.05, 30, rtEntorno);
+mundo.add(camEntorno);
+function capturarEntorno() {
+  const { W, D, H } = app.dims;
+  camEntorno.position.set(W / 2, 1.3, D / 2);
+  setEnv(null);
+  const deco = []; cocinaGrupo?.traverse(o => { if (o.isMesh && o.name === 'deco' && o.visible) { o.visible = false; deco.push(o); } });
+  mundo.updateMatrixWorld(true);
+  camEntorno.update(renderer, scene);
+  rtEntorno.texture.needsPMREMUpdate = true;
+  for (const o of deco) o.visible = true;
+  // corrección por paralaje solo fuera de XR: en XR el mundo se mueve y la caja (en coords de mundo) dejaría de cuadrar
+  const caja = app.modoXR ? null : { min: new THREE.Vector3(0, 0, 0), max: new THREE.Vector3(W, H, D), centro: camEntorno.position.clone() };
+  setEnv(rtEntorno.texture, caja);
+}
+
+let contactoK = null;
 function renderFrame() {
+  // con GTAO (escritorio, calidad alta) el contacto horneado se suaviza para no oscurecer dos veces
+  const k = renderer.xr.isPresenting || !calidad ? 1 : 0.5;
+  if (k !== contactoK) { contactoK = k; setContacto(k); }
   if (renderer.xr.isPresenting || !calidad) renderer.render(scene, camera);
   else composer.render();
 }
@@ -423,6 +447,7 @@ const ui = montarUI(app);
 const plano = montarPlano(app);
 const xr = montarXR(app, { renderer, scene, camera, mundo, luces, fondo, orbit, gtao });
 guardar();
+engancharBano(() => app.casa);
 reconstruir();
 ponerVista('general');
 ui.refrescar();

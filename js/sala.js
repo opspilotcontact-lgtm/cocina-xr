@@ -78,10 +78,10 @@ export class Luces {
     if (mundo) { this.sol.target.updateMatrixWorld(); }
     // luz de cielo que entra por la ventana principal
     if (vi) {
-      this.cielo.width = vi.ancho; this.cielo.height = vi.alto;
+      this.cielo.width = Math.max(0.2, vi.ancho - 0.2); this.cielo.height = Math.max(0.2, vi.alto - 0.1); // más estrecha que el hueco: si no, quema el costado del alto vecino
       this.cielo.position.copy(vi.centro).addScaledVector(vi.n, 0.02);
       this.cielo.lookAt(vi.centro.clone().add(vi.n));
-      this.cielo.intensity = 7 * dia;
+      this.cielo.intensity = 5 * dia;
     } else this.cielo.intensity = 0;
     this.relleno.position.set(cx, 3, cz + 4); this.relleno.target.position.set(cx, 0.5, cz);
     this.relleno.intensity = vi ? 0.15 * dia : 0.9 * dia;
