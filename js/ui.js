@@ -3,6 +3,10 @@ import {
   SERIES, ENCIMERAS, TIRADORES, CAMPANAS, PLACAS, HORNOS, FRIGOS, FRONTALES, ZOCALOS, SUELOS, PAREDES, FORMAS,
   USOS_BAJO, USOS_ALTO, COLUMNAS, ANCHOS, autodistribuir, ajustarAltos, infoTramos, ed, moduloEn,
 } from './modelo.js';
+import {
+  TIPOS, PINTURAS, HUECOS, PLANTILLAS, CARA, estanciaPorId, calcularTabiques, validar, superficies, utilEstancia,
+  edCasa, esRectangulo, bordesDe, moverBorde, huecosDeBorde,
+} from './casa/modelo-casa.js';
 
 const $ = s => document.querySelector(s);
 const h = (tag, attrs = {}, ...hijos) => {
@@ -18,7 +22,7 @@ const h = (tag, attrs = {}, ...hijos) => {
 };
 
 export function montarUI(app) {
-  let pestana = 'estilo';
+  let pestana = app.casa.estancias.length > 1 ? 'casa' : 'estilo';
   const cuerpo = $('#panelCuerpo');
   const insp = $('#inspector');
 
@@ -46,7 +50,9 @@ export function montarUI(app) {
     const e = app.estado;
     const info = infoTramos(e);
     const descuadre = info.some(t => t.libre !== 0);
+    const varias = app.casa.estancias.length > 1;
     return [
+      cabeceraCocina(),
       titulo('Forma'),
       seg(FORMAS, e.forma, k => set(st => { st.forma = k; autodistribuir(st); return null; })),
       titulo('Medidas'),
@@ -59,6 +65,7 @@ export function montarUI(app) {
           : campo('Fondo de la sala', num(e.sala.fondo, v => set(st => { st.sala.fondo = v; }), { min: 150, max: 900 })),
         campo('Alto de techo', num(e.sala.alto, v => set(st => { st.sala.alto = v; }), { min: 220, max: 350 })),
       ),
+      varias && h('p', { class: 'nota' }, 'Son medidas libres de la estancia: al cambiarlas se mueven sus tabiques en la vivienda.'),
       titulo('Ventana'),
       h('div', { class: 'rejilla' },
         campo('Hay ventana', h('div', { class: 'seg' }, h('button', { class: e.ventana.activa ? 'on' : '', onclick: () => set(st => { st.ventana.activa = true; ajustarAltos(st); }) }, 'Sí'), h('button', { class: !e.ventana.activa ? 'on' : '', onclick: () => set(st => { st.ventana.activa = false; }) }, 'No'))),
@@ -80,14 +87,116 @@ export function montarUI(app) {
       h('div', { class: 'fila' },
         h('button', { onclick: () => bajar('cocina.json', 'data:application/json;charset=utf-8,' + encodeURIComponent(app.exportar())) }, 'Guardar archivo'),
         h('button', { onclick: () => $('#abrir').click() }, 'Abrir archivo'),
-        h('button', { onclick: () => { if (confirmar('Empezar una cocina nueva. ¿Seguro?')) app.nuevo(); } }, 'Nueva')),
+        h('button', { onclick: () => { if (confirmar('Empezar una cocina nueva en esta estancia. ¿Seguro?')) app.nuevo(); } }, 'Nueva')),
     ];
+  }
+
+  // ---------- pestaña Casa ----------
+  const setCasa = fn => app.cambiarCasa(fn);
+  const texto = (valor, onSet) => { const i = h('input', { type: 'text', value: valor, class: 'texto' }); i.addEventListener('change', () => onSet(i.value.trim() || valor)); return i; };
+  const m2 = v => v.toFixed(1).replace('.', ',') + ' m²';
+
+  function pintarCasa() {
+    const casa = app.casa, sel = app.casaSel;
+    const est = estanciaPorId(casa, sel.estancia);
+    const tabs = calcularTabiques(casa);
+    const val = validar(casa, tabs);
+    const sup = superficies(casa);
+    const out = [
+      titulo('Vivienda'),
+      h('p', { class: 'nota' }, `${casa.estancias.length} estancia${casa.estancias.length > 1 ? 's' : ''} · ${m2(sup.construida)} a ejes · ${m2(sup.util)} útiles aprox.`),
+      h('div', { class: 'plantillas' }, Object.entries(PLANTILLAS).map(([k, p]) => h('button', { onclick: () => { if (confirmar(`Cambiar a «${p.nombre}». Se pierde la vivienda actual (se puede deshacer). ¿Seguro?`)) app.plantilla(k); } }, h('b', {}, p.nombre), h('small', {}, p.sub)))),
+      h('div', { class: 'fila' }, h('button', { class: 'fuerte', onclick: () => app.vista('plano') }, 'Editar plano'), h('button', { onclick: () => app.vista('general') }, 'Ver toda la casa')),
+      titulo('Estancias'),
+      h('div', { class: 'estancias' }, casa.estancias.map(e => h('div', { class: 'estancia' + (e.id === sel.estancia ? ' on' : '') },
+        h('button', { class: 'nombre', onclick: () => app.seleccionarCasa({ estancia: e.id }) }, h('i', { style: `background:${(TIPOS[e.tipo] || TIPOS.otro).color}` }), h('b', {}, e.nombre), h('small', {}, m2(utilEstancia(e)) + (e.id === casa.cocinaActiva ? ' · en edición' : ''))),
+        h('button', { onclick: () => app.entrar(e.id), title: 'Ver la estancia por dentro' }, 'Entrar')))),
+    ];
+    if (est) out.push(...pintarEstancia(est, tabs));
+    else out.push(h('p', { class: 'nota' }, 'Toca una estancia en la lista, en el plano o en el suelo del 3D para editarla.'));
+    out.push(
+      titulo('Añadir estancia'),
+      h('div', { class: 'seg' }, ['dormitorio', 'bano', 'salon', 'cocina', 'terraza', 'lavadero'].map(t => h('button', { onclick: () => setCasa(c => ({ estancia: edCasa.anadirEstancia(c, t).id })) }, TIPOS[t].nombre))),
+      h('p', { class: 'nota' }, 'Se añade pegada a la derecha de la vivienda; después se ajusta en el plano.'),
+    );
+    if (val.length) out.push(titulo('Revisión'), h('ul', { class: 'revision' }, val.map(v => h('li', { class: v.nivel }, v.texto))));
+    out.push(
+      titulo('Proyecto'),
+      h('div', { class: 'fila' },
+        h('button', { onclick: () => bajar('vivienda.json', 'data:application/json;charset=utf-8,' + encodeURIComponent(app.exportar())) }, 'Guardar archivo'),
+        h('button', { onclick: () => $('#abrir').click() }, 'Abrir archivo')),
+    );
+    return out;
+  }
+
+  function pintarEstancia(est, tabs) {
+    const sel = app.casaSel;
+    const tipo = h('select', {}, Object.entries(TIPOS).map(([k, v]) => h('option', { value: k, selected: k === est.tipo }, v.nombre)));
+    tipo.addEventListener('change', () => { let ok = true; setCasa(c => { ok = edCasa.cambiarTipo(c, est.id, tipo.value); }); if (!ok) aviso('La única cocina no puede cambiar de tipo'); });
+    const pol = est.poligono;
+    const rectEje = esRectangulo(pol) && Math.abs(pol[1][1] - pol[0][1]) < 0.5;
+    const bordes = bordesDe(pol);
+    const out = [
+      titulo(est.nombre),
+      h('div', { class: 'rejilla' },
+        campo('Nombre', texto(est.nombre, v => setCasa(c => { estanciaPorId(c, est.id).nombre = v; }))),
+        campo('Tipo', tipo)),
+      rectEje
+        ? h('div', { class: 'rejilla' },
+          campo('Ancho libre', num(Math.round(bordes[0].largo - 2 * CARA), v => setCasa(c => { moverBorde(c, est.id, 1, v - (bordes[0].largo - 2 * CARA)); }), { min: 60, max: 2000 })),
+          campo('Fondo libre', num(Math.round(bordes[1].largo - 2 * CARA), v => setCasa(c => { moverBorde(c, est.id, 2, v - (bordes[1].largo - 2 * CARA)); }), { min: 60, max: 2000 })))
+        : h('p', { class: 'nota' }, 'Paredes: ' + bordes.map(b => Math.round(b.largo - 2 * CARA)).join(' · ') + ' cm (se ajustan en el plano).'),
+      est.tipo !== 'terraza' && campo('Alto de techo', num(est.alto, v => setCasa(c => { estanciaPorId(c, est.id).alto = v; }), { min: 220, max: 400 })),
+      titulo('Suelo'),
+      seg(SUELOS, est.suelo, k => setCasa(c => { estanciaPorId(c, est.id).suelo = k; })),
+      est.tipo !== 'terraza' && titulo('Pintura'),
+      est.tipo !== 'terraza' && seg(Object.fromEntries(Object.entries(PINTURAS).map(([k, v]) => [k, v.nombre])), est.pintura, k => setCasa(c => { estanciaPorId(c, est.id).pintura = k; })),
+    ];
+    if (est.cocina) out.push(h('button', { class: 'ancho' + (app.casa.cocinaActiva === est.id ? '' : ' fuerte'), onclick: () => { app.activarCocina(est.id); irA('espacio'); } }, app.casa.cocinaActiva === est.id ? 'Editar los muebles de esta cocina' : 'Editar esta cocina'));
+    // huecos de la estancia (estén guardados aquí o en la vecina)
+    const hs = bordes.flatMap(b => huecosDeBorde(tabs, est.id, b.i).map(q => ({ ...q, borde: b.i })));
+    out.push(titulo('Puertas y ventanas'));
+    if (!hs.length) out.push(h('p', { class: 'nota' }, 'Sin huecos. En el plano, toca un tabique y añade una puerta o una ventana.'));
+    out.push(h('div', { class: 'estancias' }, hs.map(q => h('div', { class: 'estancia' + (q.h.id === sel.hueco ? ' on' : '') },
+      h('button', { class: 'nombre', onclick: () => app.seleccionarCasa({ estancia: est.id, borde: q.borde, hueco: q.h.id }) }, h('b', {}, HUECOS[q.h.tipo]), h('small', {}, `${q.h.ancho} × ${q.h.alto} cm · pared ${q.borde + 1}`))))));
+    const hsel = hs.find(q => q.h.id === sel.hueco)?.h;
+    if (hsel) out.push(...pintarHueco(hsel));
+    out.push(h('div', { class: 'fila' },
+      h('button', { onclick: () => app.entrar(est.id) }, 'Entrar'),
+      h('button', { onclick: () => app.vista('plano') }, 'Ver en plano'),
+      h('button', { class: 'peligro', onclick: () => { if (!confirmar(`Quitar «${est.nombre}». ¿Seguro?`)) return; let ok = true; setCasa(c => { ok = edCasa.quitarEstancia(c, est.id); return ok ? { estancia: null } : undefined; }); if (!ok) aviso('La única cocina no se puede quitar'); } }, 'Quitar')));
+    return out;
+  }
+
+  function pintarHueco(hu) {
+    const ed2 = fn => setCasa(c => { const x = c.huecos.find(y => y.id === hu.id); if (x) fn(x); });
+    const puerta = hu.tipo === 'abatible' || hu.tipo === 'corredera';
+    return [
+      h('div', { class: 'hueco-ed' },
+        seg(HUECOS, hu.tipo, k => ed2(x => { x.tipo = k; if (k === 'ventana' && !x.antepecho) Object.assign(x, { antepecho: 100, alto: 120 }); if (k !== 'ventana') x.antepecho = 0; if (k !== 'ventana' && x.alto < 200) x.alto = k === 'balconera' ? 215 : 210; })),
+        h('div', { class: 'rejilla' },
+          campo('Ancho', num(hu.ancho, v => ed2(x => { x.ancho = v; }), { min: 40, max: 400 })),
+          campo('Alto', num(hu.alto, v => ed2(x => { x.alto = v; }), { min: 40, max: 300 })),
+          !puerta && hu.tipo === 'ventana' && campo('Antepecho', num(hu.antepecho, v => ed2(x => { x.antepecho = v; }), { min: 0, max: 200 })),
+          campo('Desde la esquina', num(Math.round(hu.pos - CARA), v => ed2(x => { x.pos = v + CARA; }), { min: 0, max: 2000 })),
+          puerta && campo('Mano', seg({ izquierda: 'Izquierda', derecha: 'Derecha' }, hu.mano || 'izquierda', k => ed2(x => { x.mano = k; }))),
+          puerta && campo('Abre hacia', seg({ dentro: 'Dentro', fuera: 'Fuera' }, hu.abre || 'dentro', k => ed2(x => { x.abre = k; })))),
+        h('button', { class: 'ancho peligro', onclick: () => setCasa(c => { edCasa.quitarHueco(c, hu.id); return { estancia: app.casaSel.estancia }; }) }, 'Quitar este hueco')),
+    ];
+  }
+
+  // con varias cocinas en la vivienda, dice cuál se está editando
+  function cabeceraCocina() {
+    const cs = app.casa.estancias.filter(x => x.cocina);
+    if (cs.length < 2) return null;
+    return h('div', { class: 'seg cocinas' }, cs.map(c => h('button', { class: c.id === app.casa.cocinaActiva ? 'on' : '', onclick: () => app.activarCocina(c.id) }, c.nombre)));
   }
 
   function pintarEstilo() {
     const s = app.estado.estilo;
     const altos = s.serieAltos || 'igual';
     return [
+      cabeceraCocina(),
       titulo('Frentes'),
       h('div', { class: 'muestras' }, Object.entries(SERIES).map(([k, v]) => muestra(k, v, s.serie === k, id => set(st => { st.estilo.serie = id; })))),
       titulo('Altos y columnas'),
@@ -115,13 +224,14 @@ export function montarUI(app) {
   function pintarElectro() {
     const s = app.estado.estilo;
     return [
+      cabeceraCocina(),
       titulo('Campana'),
       seg(CAMPANAS, s.campana, k => set(st => { st.estilo.campana = k; }), { col: true }),
       h('p', { class: 'nota' }, 'Telescópica e integrada van dentro de un alto; piramidal, plana e inclinada son decorativas con chimenea hasta el techo.'),
       titulo('Placa'), seg(PLACAS, s.placa, k => set(st => { st.estilo.placa = k; })),
       titulo('Horno y microondas'), seg(HORNOS, s.horno, k => set(st => { st.estilo.horno = k; })),
       titulo('Frigorífico'), seg(FRIGOS, s.frigo, k => set(st => { st.estilo.frigo = k; }), { col: true }),
-      h('p', { class: 'nota' }, 'Para mover el frigorífico, el fregadero o el horno: tocá el módulo en la cocina y cambiá su uso o movelo con las flechas.'),
+      h('p', { class: 'nota' }, 'Para mover el frigorífico, el fregadero o el horno: toca el módulo en la cocina y cambia su uso o muévelo con las flechas.'),
     ];
   }
 
@@ -132,6 +242,7 @@ export function montarUI(app) {
     hora.addEventListener('input', () => { app.estado.luz.hora = Number(hora.value); etq.textContent = fmtHora(app.estado.luz.hora); app.aplicarLuz(); });
     hora.addEventListener('change', () => app.cambiar(() => { }, { reconstruir: false }));
     return [
+      cabeceraCocina(),
       titulo('Hora del día'),
       h('div', { class: 'hora' }, hora, etq),
       h('p', { class: 'nota' }, 'El sol entra por la ventana y cambia de color y ángulo con la hora.'),
@@ -186,7 +297,7 @@ export function montarUI(app) {
     const foco = document.activeElement;
     if (foco && cuerpo.contains(foco) && foco.type === 'range') { pintarInspector(); return; }
     const scroll = cuerpo.scrollTop;
-    const contenido = { espacio: pintarEspacio, estilo: pintarEstilo, electro: pintarElectro, luz: pintarLuz }[pestana]();
+    const contenido = { casa: pintarCasa, espacio: pintarEspacio, estilo: pintarEstilo, electro: pintarElectro, luz: pintarLuz }[pestana]();
     cuerpo.replaceChildren(...contenido.filter(Boolean));
     cuerpo.scrollTop = scroll;
     document.querySelectorAll('#pestanas button').forEach(b => b.classList.toggle('on', b.dataset.p === pestana));
@@ -195,12 +306,14 @@ export function montarUI(app) {
     $('#btnVR').disabled = !xrDisp.vr; $('#btnAR').disabled = !xrDisp.ar;
   }
 
-  document.querySelectorAll('#pestanas button').forEach(b => b.addEventListener('click', () => { pestana = b.dataset.p; document.body.classList.add('panel-abierto'); refrescar(); }));
+  function irA(p) { pestana = p; document.body.classList.add('panel-abierto'); refrescar(); }
+  app.irA = irA;
+  document.querySelectorAll('#pestanas button').forEach(b => b.addEventListener('click', () => irA(b.dataset.p)));
   document.querySelectorAll('[data-vista]').forEach(b => b.addEventListener('click', () => app.vista(b.dataset.vista)));
   $('#btnDeshacer').addEventListener('click', () => app.deshacer());
   $('#btnRehacer').addEventListener('click', () => app.rehacer());
   $('#btnPanel').addEventListener('click', () => document.body.classList.toggle('panel-abierto'));
-  $('#abrir').addEventListener('change', async ev => { const f = ev.target.files[0]; if (f) { try { app.importar(await f.text()); } catch { aviso('Ese archivo no es una cocina válida'); } } ev.target.value = ''; });
+  $('#abrir').addEventListener('change', async ev => { const f = ev.target.files[0]; if (f) { try { app.importar(await f.text()); } catch { aviso('Ese archivo no es una vivienda ni una cocina válida'); } } ev.target.value = ''; });
 
   return { refrescar, accion };
 }
