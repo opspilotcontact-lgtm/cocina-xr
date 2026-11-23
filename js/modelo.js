@@ -28,7 +28,11 @@ export const FRIGOS = { integrado: 'Integrado en columna', inox: 'Libre inox', b
 export const FRONTALES = { azulejo: 'Azulejo metro blanco', encimera: 'Igual que la encimera', pintura: 'Solo pintura' };
 export const ZOCALOS = { aluminio: 'Aluminio', frente: 'Igual que los frentes', negro: 'Negro' };
 export const SUELOS = { porcelanico: 'Porcelánico gris claro', beige: 'Porcelánico beige', tarima: 'Tarima roble' };
-export const PAREDES = { blanco: { nombre: 'Blanco roto', color: '#efede8' }, arena: { nombre: 'Arena', color: '#e3dacb' }, perla: { nombre: 'Gris perla', color: '#d9d9d6' } };
+// Pinturas de pared: las mismas en la cocina, el baño y el resto de la vivienda (PINTURAS y PAREDES_BANO son esta lista)
+export const PAREDES = {
+  blanco: { nombre: 'Blanco roto', color: '#efede8' }, arena: { nombre: 'Arena', color: '#e3dacb' }, perla: { nombre: 'Gris perla', color: '#d9d9d6' },
+  salvia: { nombre: 'Verde salvia', color: '#d3dacb' }, niebla: { nombre: 'Azul niebla', color: '#d4dbe0' }, arcilla: { nombre: 'Arcilla', color: '#e4cfbf' },
+};
 export const FORMAS = { lineal: 'Lineal', L: 'En L', U: 'En U', paralelo: 'Paralela' };
 
 export const USOS_BAJO = {
