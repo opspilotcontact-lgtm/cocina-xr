@@ -25,8 +25,8 @@
   #panel > header { padding: 14px 16px 10px; display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--linea); }
   #panel > header h1 { font-size: 16px; margin: 0; letter-spacing: .01em; }
   #panel > header small { color: var(--suave); font-size: 12px; }
-  #pestanas { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--linea); }
-  #pestanas button { border: 0; border-right: 1px solid var(--linea); padding: 11px 4px; background: transparent; font-weight: 600; }
+  #pestanas { display: grid; grid-template-columns: 1fr 1.6fr 1fr 1fr; border-bottom: 1px solid var(--linea); }
+  #pestanas button { border: 0; border-right: 1px solid var(--linea); padding: 11px 6px; background: transparent; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   #pestanas button:last-child { border-right: 0; }
   #pestanas button.on { background: var(--tinta); color: #fff; }
   #panelCuerpo { overflow: auto; padding: 4px 16px 20px; flex: 1; }
@@ -37,8 +37,9 @@
   .seg.col button { text-align: left; }
   .seg.chico button { padding: 5px 6px; font-size: 12px; flex: 0 0 auto; min-width: 38px; }
   .muestras { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-  .muestra { padding: 0 0 6px; display: flex; flex-direction: column; align-items: stretch; text-align: left; gap: 2px; background: #fff; }
-  .muestra i { display: block; height: 44px; border-bottom: 1px solid var(--linea); }
+  .muestra { padding: 0 0 6px; display: flex; flex-direction: column; align-items: stretch; text-align: left; gap: 2px; background: #fff; min-width: 0; }
+  .muestra i { display: block; height: 38px; border-bottom: 1px solid var(--linea); }
+  .muestra b { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-weight: 500; line-height: 1.25; padding-top: 3px; }
   .muestra i.igual { background: repeating-linear-gradient(135deg, #fff 0 6px, #eee 6px 12px); }
   .muestra b { font-size: 12px; padding: 0 6px; }
   .muestra small { font-size: 10.5px; color: var(--suave); padding: 0 6px; line-height: 1.2; }
@@ -49,7 +50,30 @@
   .campo select { padding: 7px 8px; border: 1px solid var(--linea); background: #fff; color: var(--tinta); font-size: 13px; }
   .num { display: flex; align-items: center; border: 1px solid var(--linea); background: #fff; }
   .num input { width: 100%; border: 0; padding: 7px 8px; font-size: 13px; color: var(--tinta); background: transparent; min-width: 0; }
-  .num em { font-style: normal; font-size: 11px; color: var(--suave); padding-right: 8px; }
+  .num em { font-style: normal; font-size: 11px; color: var(--suave); padding-right: 4px; white-space: nowrap; }
+  .num .paso { border: 0; padding: 7px 9px; background: transparent; font-size: 15px; line-height: 1; color: var(--suave); }
+  .num .paso:hover:not(:disabled) { color: var(--tinta); background: #f1efea; }
+  /* filas del catálogo (js/opciones.js) */
+  .bloque { margin-top: 4px; }
+  .bloque > .op, .bloque > .rejilla, .bloque > .acciones, .bloque > .nota, .bloque > .estancias { margin-top: 10px; }
+  .bloque > h3 + * { margin-top: 0 !important; }
+  .op { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .op > .etq { font-size: 12px; color: var(--suave); font-weight: 500; }
+  .op > select { padding: 7px 8px; border: 1px solid var(--linea); background: #fff; color: var(--tinta); font-size: 13px; width: 100%; }
+  .acciones { display: flex; flex-wrap: wrap; gap: 4px; }
+  .acciones > button { flex: 1 1 auto; }
+  .acciones.col { flex-direction: column; }
+  .acciones.col > button { text-align: left; }
+  .nota.error { color: var(--peligro); } .nota.aviso { color: #8a6400; } .nota.info { color: #2f5d7c; }
+  .cab-estancia { display: grid; grid-template-columns: 14px 1fr; gap: 4px 10px; align-items: center; margin-top: 14px; }
+  .cab-estancia i { width: 14px; height: 14px; border: 1px solid rgba(0,0,0,.15); }
+  .cab-estancia input { font-size: 16px; font-weight: 600; border-color: transparent; background: transparent; padding: 4px 6px; margin-left: -6px; }
+  .cab-estancia input:hover, .cab-estancia input:focus { border-color: var(--linea); background: #fff; }
+  .cab-estancia small { grid-column: 2; color: var(--suave); font-size: 12px; }
+  nav.sub { display: flex; gap: 0; margin-top: 12px; border: 1px solid var(--linea); }
+  nav.sub button { flex: 1; border: 0; border-right: 1px solid var(--linea); background: #fff; padding: 8px 4px; font-size: 12.5px; }
+  nav.sub button:last-child { border-right: 0; }
+  nav.sub button.on { background: var(--tinta); color: #fff; }
   .fila { display: flex; gap: 6px; margin-top: 8px; }
   .fila > * { flex: 1; }
   .fila .num { flex: 2; }
@@ -68,8 +92,11 @@
   .hora input { flex: 1; accent-color: var(--tinta); }
   .hora b { font-variant-numeric: tabular-nums; min-width: 44px; }
 
-  #inspector { position: fixed; top: 12px; right: 12px; width: 300px; background: var(--panel); box-shadow: var(--sombra); padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; z-index: 6; }
-  #inspector header { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+  #inspector { position: fixed; top: 12px; right: 12px; width: 320px; max-height: calc(100% - 100px); background: var(--panel); box-shadow: var(--sombra); display: flex; flex-direction: column; z-index: 6; }
+  #inspector header { display: flex; justify-content: space-between; align-items: center; font-size: 14px; padding: 10px 10px 8px 14px; border-bottom: 1px solid var(--linea); gap: 8px; }
+  #inspector .insp-cuerpo { overflow: auto; padding: 2px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+  #inspector .insp-cuerpo > :first-child { margin-top: 8px; }
+  #inspector .muestras { grid-template-columns: repeat(4, 1fr); }
   #inspector .x { border: 0; font-size: 20px; padding: 0 4px; background: transparent; }
 
   #barra { position: fixed; left: 12px; right: 12px; bottom: 12px; height: 52px; display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--panel); box-shadow: var(--sombra); z-index: 5; }
@@ -136,7 +163,8 @@
     #panel { top: auto; left: 0; right: 0; bottom: 64px; width: auto; height: 46vh; transform: translateY(calc(100% - 44px)); transition: transform .25s; }
     body.panel-abierto #panel { transform: none; }
     #panel > header { display: none; }
-    #inspector { left: 8px; right: 8px; width: auto; top: 8px; }
+    #inspector { left: 8px; right: 8px; width: auto; top: 8px; max-height: calc(54vh - 80px); }
+    body.panel-abierto #inspector { max-height: calc(54vh - 90px); }
     #barra { left: 0; right: 0; bottom: 0; height: 64px; overflow-x: auto; padding-bottom: env(safe-area-inset-bottom); }
     #btnPanel { display: block; }
     #fps, #mallas { display: none; }
@@ -152,10 +180,9 @@
   <header><h1>Cocina XR</h1><small>prototipo · sin precios</small></header>
   <nav id="pestanas">
     <button data-p="casa">Casa</button>
-    <button data-p="espacio">Espacio</button>
-    <button data-p="estilo">Estilo</button>
-    <button data-p="electro">Electro</button>
+    <button data-p="estancia">Estancia</button>
     <button data-p="luz">Luz</button>
+    <button data-p="proyecto">Proyecto</button>
   </nav>
   <div id="panelCuerpo"></div>
 </aside>

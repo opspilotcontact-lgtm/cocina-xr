@@ -32,12 +32,7 @@ export const TIPOS = {
   otro: { nombre: 'Otra', suelo: 'porcelanico', pintura: 'blanco', color: '#e8e6e1' },
 };
 
-export const PINTURAS = {
-  ...PAREDES,
-  salvia: { nombre: 'Verde salvia', color: '#d3dacb' },
-  niebla: { nombre: 'Azul niebla', color: '#d4dbe0' },
-  arcilla: { nombre: 'Arcilla', color: '#e4cfbf' },
-};
+export const PINTURAS = PAREDES;   // una sola lista para cocina, baño y resto (js/modelo.js)
 export const SUELOS_CASA = SUELOS;
 export const FACHADA = '#e7e1d5';
 export const YESO = '#f0eee9';

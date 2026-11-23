@@ -5,7 +5,7 @@
 // En cada pared, s va de izquierda a derecha mirándola desde dentro y d es la distancia hacia dentro.
 // Cada pieza guarda `pared`, `x` = CENTRO sobre la pared (cm; en el inodoro y el bidé es el eje) y sus medidas.
 // La puerta y la ventana guardan `x` = INICIO del hueco (como la ventana de la cocina).
-import { SERIES } from './modelo.js';
+import { SERIES, PAREDES } from './modelo.js';
 
 export { SERIES };
 
@@ -42,7 +42,7 @@ export const SUELOS_BANO = {
   gris: { nombre: 'Porcelánico gris', color: '#c9c7c2' }, beige: { nombre: 'Porcelánico beige', color: '#d6cab6' },
   antracita: { nombre: 'Porcelánico antracita', color: '#6d6c69' }, madera: { nombre: 'Porcelánico madera', color: '#b48d62' },
 };
-export const PAREDES_BANO = { blanco: { nombre: 'Blanco roto', color: '#efede8' }, arena: { nombre: 'Arena', color: '#e3dacb' }, perla: { nombre: 'Gris perla', color: '#d9d9d6' } };
+export const PAREDES_BANO = PAREDES; // la pintura del baño en la vivienda es la de su estancia (bano-estado.js la copia)
 export const TIPOS = { mueble: 'Mueble de lavabo', inodoro: 'Inodoro', bide: 'Bidé', ducha: 'Plato de ducha', banera: 'Bañera', radiador: 'Radiador toallero' };
 
 // Medidas fijas (cm)
@@ -475,3 +475,127 @@ const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 export function clonar(e) { return JSON.parse(JSON.stringify(e)); }
 export function elemento(e, id) { return e.elementos.find(q => q.id === id) || null; }
 export function primero(e, tipo) { return e.elementos.find(q => q.tipo === tipo) || null; }
+
+// ---------- Ediciones de pieza (las usa js/opciones.js) ----------
+// Todas mutan el estado `e`; las que pueden fallar devuelven un texto de aviso (string) o null.
+
+// Pared de la zona de agua: la de la ducha o la bañera; si no hay, la corta contraria a la puerta (como el reparto).
+export function paredAgua(e) {
+  const z = e.elementos.find(q => q.tipo === 'ducha' || q.tipo === 'banera');
+  if (z) return z.pared;
+  const cortas = e.sala.ancho <= e.sala.fondo ? ['A', 'D'] : ['B', 'C'];
+  return cortas.includes(e.puerta?.pared) ? OPUESTA[e.puerta.pared] : cortas[0];
+}
+
+// Centro mínimo y máximo de una pieza sobre su pared (que la huella no se salga).
+function limitesX(e, el) {
+  const m = medidas({ ...el, x: 0 }), largo = paredesBano(e)[el.pared].largo;
+  return [-m.s0, largo - m.s1];
+}
+const encajar = (e, el, x) => { const [a, b] = limitesX(e, el); return Math.round(Math.max(a, Math.min(Math.max(a, b), x))); };
+const sinPieza = (e, el) => ({ ...e, elementos: e.elementos.filter(q => q !== el) });
+
+// Medidas de catálogo al crear o convertir una pieza
+function medidasNuevas(e, tipo, pared) {
+  const largo = paredesBano(e)[pared].largo;
+  if (tipo === 'mueble') return { ancho: 80 };
+  if (tipo === 'ducha') return { ancho: Math.max(PLATO.anchoMin, Math.min(120, largo)), fondo: 80 };
+  if (tipo === 'banera') return { largo: [...LARGOS_BANERA].reverse().find(l => l <= largo) || LARGOS_BANERA[0] };
+  return {};
+}
+
+export const edBano = {
+  // Desplaza la pieza d cm a lo largo de su pared
+  mover(e, id, d) { const el = elemento(e, id); if (el) el.x = encajar(e, el, el.x + d); },
+  // Centro de la pieza (cm desde el extremo izquierdo de la pared mirándola)
+  posicion(e, id, x) { const el = elemento(e, id); if (el) el.x = encajar(e, el, x); },
+  // Cambia de pared: busca el primer sitio libre como el reparto; si no lo hay, la deja centrada (avisa validar()).
+  pared(e, id, pared) {
+    const el = elemento(e, id); if (!el || el.pared === pared || !paredesBano(e)[pared]) return null;
+    const resto = sinPieza(e, el);
+    const s = buscarSitio(resto, { ...el, pared }, paredAgua(resto));
+    el.pared = pared;
+    el.x = s ?? encajar(e, el, paredesBano(e)[pared].largo / 2);
+    return s == null ? 'No hay un sitio libre en esa pared: queda centrada, revisa los avisos.' : null;
+  },
+  // Cambia una medida (ancho, fondo, largo, alto…) y la recoloca dentro de la pared
+  medida(e, id, campo, v) {
+    const el = elemento(e, id); if (!el) return;
+    el[campo] = v;
+    if (el.tipo === 'mueble' && campo === 'ancho' && v < 120) el.senos = 1;
+    el.x = encajar(e, el, el.x);
+  },
+  duplicar(e, id) {
+    const el = elemento(e, id); if (!el) return null;
+    const copia = { ...el, id: nuevoId() };
+    const hw = paredAgua(e);
+    for (const p of [el.pared, ...['A', 'B', 'C', 'D'].filter(x => x !== el.pared)]) {
+      const s = buscarSitio(e, { ...copia, pared: p }, hw);
+      if (s != null) { copia.pared = p; copia.x = s; e.elementos.push(copia); ordenar(e); return copia.id; }
+    }
+    const m = medidas(el);
+    copia.x = encajar(e, copia, el.x + (m.s1 - m.s0) + 5);
+    e.elementos.push(copia); ordenar(e);
+    return copia.id;
+  },
+  borrar(e, id) { e.elementos = e.elementos.filter(q => q.id !== id); sincronizarOpciones(e); },
+  // Añade una pieza de catálogo en el primer sitio libre; si no cabe, en el centro de la pared más larga.
+  anadir(e, tipo) {
+    if (!POR_DEFECTO[tipo]) return null;
+    const hw = paredAgua(e);
+    const P = paredesBano(e);
+    const orden = tipo === 'ducha' || tipo === 'banera' ? [hw, ...['A', 'B', 'C', 'D'].filter(p => p !== hw)] : ['A', 'B', 'C', 'D'];
+    const base = { ...POR_DEFECTO[tipo], id: nuevoId(), tipo, x: 0 };
+    for (const p of orden) {
+      const el = { ...base, ...medidasNuevas(e, tipo, p), pared: p };
+      const s = buscarSitio(e, el, hw);
+      if (s != null) { el.x = s; e.elementos.push(el); ordenar(e); sincronizarOpciones(e); return { id: el.id, cabe: true }; }
+    }
+    const p = Object.values(P).sort((a, b) => b.largo - a.largo)[0].id;
+    const el = { ...base, ...medidasNuevas(e, tipo, p), pared: p };
+    el.x = encajar(e, el, P[p].largo / 2);
+    e.elementos.push(el); ordenar(e); sincronizarOpciones(e);
+    return { id: el.id, cabe: false };
+  },
+  // Ducha ↔ bañera en el mismo sitio (pegada a la misma esquina). Devuelve un aviso si no cabe.
+  zonaAgua(e, zona) {
+    const tipo = zona === 'banera' ? 'banera' : 'ducha';
+    e.opciones.zonaAgua = tipo;
+    const vieja = e.elementos.find(q => q.tipo === 'ducha' || q.tipo === 'banera');
+    if (!vieja) { const r = edBano.anadir(e, tipo); return r?.cabe ? null : 'No hay sitio libre: revisa los avisos.'; }
+    if (vieja.tipo === tipo) return null;
+    const P = paredesBano(e)[vieja.pared], m = medidas(vieja);
+    const izq = m.s0 <= P.largo - m.s1;
+    const comun = { id: nuevoId(), pared: vieja.pared, grifoLado: vieja.grifoLado, perfil: vieja.perfil };
+    let nueva;
+    if (tipo === 'banera') {
+      const largo = [...LARGOS_BANERA].reverse().find(l => l <= P.largo);
+      if (!largo) { e.opciones.zonaAgua = 'ducha'; return `No cabe una bañera de ${LARGOS_BANERA[0]} cm en una pared de ${P.largo} cm.`; }
+      nueva = { ...POR_DEFECTO.banera, ...comun, tipo, largo };
+      nueva.x = izq ? Math.max(0, m.s0) + largo / 2 : Math.min(P.largo, m.s1) - largo / 2;
+    } else {
+      const ancho = Math.max(PLATO.anchoMin, Math.min(PLATO.anchoMax, Math.round(m.s1 - m.s0)));
+      nueva = { ...POR_DEFECTO.ducha, ...comun, tipo, ancho, fondo: 80 };
+      nueva.x = izq ? m.s0 + ancho / 2 : m.s1 - ancho / 2;
+    }
+    nueva.x = encajar(e, nueva, nueva.x);
+    e.elementos[e.elementos.indexOf(vieja)] = nueva;
+    return null;
+  },
+  // Pone o quita todas las piezas de un tipo opcional (bidé, radiador)
+  opcional(e, tipo, si) {
+    const hay = e.elementos.some(q => q.tipo === tipo);
+    if (si && !hay) { const r = edBano.anadir(e, tipo); return r?.cabe ? null : `No queda sitio libre para ${NOMBRE[tipo] || tipo}: revisa los avisos.`; }
+    if (!si) e.elementos = e.elementos.filter(q => q.tipo !== tipo);
+    sincronizarOpciones(e);
+    return null;
+  },
+};
+
+// Las opciones del baño reflejan lo que hay de verdad (para que «Repartir de nuevo» respete lo elegido)
+function sincronizarOpciones(e) {
+  e.opciones.bide = e.elementos.some(q => q.tipo === 'bide');
+  e.opciones.radiador = e.elementos.some(q => q.tipo === 'radiador');
+  const z = e.elementos.find(q => q.tipo === 'ducha' || q.tipo === 'banera');
+  if (z) e.opciones.zonaAgua = z.tipo;
+}

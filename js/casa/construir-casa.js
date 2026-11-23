@@ -188,7 +188,7 @@ export function construirCasa(casa, mats, { cocinaId = null } = {}) {
   }
 
   // contenido de estancias (baño, otras cocinas…); la cocina activa va aparte, en su propio marco
-  const contenidos = [];
+  const contenidos = [], picks = [];
   for (const est of casa.estancias) {
     if (est.id === cocinaId) continue;
     const m = marcoEstancia(est);
@@ -198,6 +198,11 @@ export function construirCasa(casa, mats, { cocinaId = null } = {}) {
     for (const p of r.lote.partes) p.m = Me.clone().multiply(p.m);
     contenidos.push({ lote: r.lote, mats: r.mats });
     for (const l of r.luces || []) focos.push({ p: new THREE.Vector3(l.x, l.y, l.z).applyMatrix4(Me), estancia: est.id });
+    // piezas seleccionables (las que traen id, p. ej. las del baño): caja en coords de su pared → casa
+    for (const p of r.picks || []) {
+      if (p.id == null) continue;
+      picks.push({ M: Me.clone().multiply(p.R), x0: p.x0, x1: p.x1, y0: p.y0 ?? 0, y1: p.y1, z0: p.z0 ?? 0, z1: p.z1, userData: { ambito: 'elemento', estancia: est.id, id: p.id, tipo: p.tipo } });
+    }
   }
 
   // ---------- mallas ----------
@@ -223,7 +228,7 @@ export function construirCasa(casa, mats, { cocinaId = null } = {}) {
   const cj = caja(todo);
   const altoMax = Math.max(2.2, ...casa.estancias.filter(e => !esFuera(e)).map(e => e.alto / 100));
   return {
-    grupo, instancias: inst, techo, deTecho, suelos, exteriores, ventanas, focos,
+    grupo, instancias: inst, techo, deTecho, suelos, exteriores, ventanas, focos, picks,
     tabiques: tabiques.map(t => ({ idx: t.idx, a: [t.a[0] / 100, t.a[1] / 100], b: [t.b[0] / 100, t.b[1] / 100], n: t.n, alto: t.alto / 100, exterior: t.exterior })),
     caja: { x0: cj.x0 / 100, z0: cj.y0 / 100, x1: cj.x1 / 100, z1: cj.y1 / 100, alto: altoMax },
   };

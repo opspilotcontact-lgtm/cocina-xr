@@ -24,6 +24,7 @@ import { construirCasa, materialesCasa, ocultarTabiques } from './casa/construir
 import { montarPlano } from './casa/plano.js';
 import { engancharBano } from './casa/bano-enganche.js';
 import { montarUI, aviso as avisar } from './ui.js';
+import { normalizarSeleccion } from './opciones.js';
 import { montarXR } from './xr.js';
 
 RectAreaLightUniformsLib.init();
@@ -71,14 +72,23 @@ let calidad = !movil;
 // ---------- estado ----------
 let casa = leerGuardado(localStorage);
 const estanciaCocina = () => cocinaActiva(casa);
-let seleccion = null;                       // módulo de la cocina activa { tramo, idx }
+// selección (contrato de js/opciones.js): { ambito:'modulo', tramo, idx } | { ambito:'elemento', estancia, id } | { ambito:'estancia', estancia }
+let seleccion = null;
 let casaSel = { estancia: estanciaCocina()?.id ?? null, borde: null, hueco: null };
 const pasado = [], futuro = [];
 
 function instantanea() { pasado.push(JSON.stringify(casa)); if (pasado.length > 80) pasado.shift(); futuro.length = 0; }
 function tras(rec = true) { guardar(); if (rec) reconstruir(); else aplicarLuz(); ui.refrescar(); xr.refrescar(); plano.refrescar(); }
+// ¿sigue existiendo lo seleccionado? (tras deshacer, borrar o cambiar de cocina)
+function selValida(s) {
+  if (!s) return null;
+  if (s.ambito === 'modulo') return app.estado?.tramos[s.tramo]?.[s.idx] ? s : null;
+  const est = estanciaPorId(casa, s.estancia); if (!est) return null;
+  if (s.ambito === 'elemento') return est.contenido?.elementos?.some(q => q.id === s.id) ? s : null;
+  return s;
+}
 function restaurar(txt) {
-  casa = cargarCasa(JSON.parse(txt)); seleccion = null;
+  casa = cargarCasa(JSON.parse(txt)); seleccion = selValida(seleccion);
   if (!estanciaPorId(casa, casaSel.estancia)) casaSel = { estancia: estanciaCocina()?.id ?? null, borde: null, hueco: null };
   tras();
 }
@@ -93,7 +103,7 @@ const app = {
   cambiar(fn, { reconstruir: rec = true } = {}) {
     instantanea();
     const r = fn(app.estado);
-    if (r !== undefined) seleccion = r;
+    if (r !== undefined) seleccion = normalizarSeleccion(r);
     if (rec) { const e = estanciaCocina(); if (e) desdeCocina(casa, e); sincronizarCocinas(casa); }
     tras(rec);
   },
@@ -101,18 +111,29 @@ const app = {
   cambiarCasa(fn, { instantanea: inst = true, reconstruir: rec = true } = {}) {
     if (inst) instantanea();
     const r = fn(casa);
-    if (r && typeof r === 'object' && 'estancia' in r) casaSel = { borde: null, hueco: null, ...r };
+    // devuelve una selección del contrato ({ ambito, … }) o la de la casa ({ estancia, borde?, hueco? })
+    if (r && typeof r === 'object' && r.ambito) { seleccion = normalizarSeleccion(r); if (seleccion?.estancia) casaSel = { estancia: seleccion.estancia, borde: null, hueco: null }; }
+    else if (r && typeof r === 'object' && 'estancia' in r) casaSel = { borde: null, hueco: null, ...r };
     sincronizarCocinas(casa);
-    if (seleccion && !app.estado?.tramos[seleccion.tramo]?.[seleccion.idx]) seleccion = null;
+    seleccion = selValida(seleccion);
     tras(rec);
   },
   instantanea,
   deshacer() { if (!pasado.length) return; futuro.push(JSON.stringify(casa)); restaurar(pasado.pop()); },
   rehacer() { if (!futuro.length) return; pasado.push(JSON.stringify(casa)); restaurar(futuro.pop()); },
-  seleccionar(sel) { seleccion = sel; marcarSeleccion(); ui.refrescar(); xr.refrescar(); },
+  // acepta { ambito:'modulo'|'elemento'|'estancia', … } (y { tramo, idx } a secas, como antes); la estancia de la casa sigue a la selección
+  seleccionar(sel) {
+    seleccion = selValida(normalizarSeleccion(sel));
+    const est = seleccion?.ambito === 'modulo' ? estanciaCocina()?.id : seleccion?.estancia;
+    if (est && est !== casaSel.estancia) casaSel = { estancia: est, borde: null, hueco: null };
+    marcarSeleccion(); marcarEstancia(); ui.refrescar(); xr.refrescar(); plano.refrescar();
+  },
   seleccionarCasa(sel) {
     casaSel = { estancia: null, borde: null, hueco: null, ...sel };
-    marcarEstancia(); ui.refrescar(); plano.refrescar();
+    // lo seleccionado en otra estancia deja de estarlo
+    const de = seleccion?.ambito === 'modulo' ? estanciaCocina()?.id : seleccion?.estancia;
+    if (seleccion && de !== casaSel.estancia) { seleccion = null; marcarSeleccion(); }
+    marcarEstancia(); ui.refrescar(); plano.refrescar(); xr.refrescar();
   },
   // la estancia cocina con la que trabajan las pestañas Espacio/Estilo/Electro/Luz
   activarCocina(id) {
@@ -184,11 +205,22 @@ function reconstruir() {
   const { lote, picks, ledes } = construirCocina(k);
   cocinaGrupo = fusionar(lote, mats); cocinaGrupo.name = 'cocina';
   mundo.add(cocinaGrupo);
+  // picks (invisibles) con la selección del contrato en userData: módulos, piezas del baño y suelos de estancia
   const matPick = new THREE.MeshBasicMaterial();
+  const pick = (g, ud) => { const mm = new THREE.Mesh(g, matPick); mm.visible = false; mm.userData = ud; picksGrupo.add(mm); };
   for (const p of picks) {
     const g = new THREE.BoxGeometry(p.x1 - p.x0, p.y1, p.z1); g.translate((p.x0 + p.x1) / 2, p.y1 / 2, p.z1 / 2); g.applyMatrix4(p.R);
-    const mm = new THREE.Mesh(g, matPick); mm.visible = false; mm.userData = { tramo: p.tramo, idx: p.idx };
-    picksGrupo.add(mm);
+    pick(g, { ambito: 'modulo', tramo: p.tramo, idx: p.idx });
+  }
+  for (const p of casaR.picks) {
+    const g = new THREE.BoxGeometry(p.x1 - p.x0, p.y1 - p.y0, p.z1 - p.z0); g.translate((p.x0 + p.x1) / 2, (p.y0 + p.y1) / 2, (p.z0 + p.z1) / 2);
+    g.applyMatrix4(p.M); g.applyMatrix4(matrizCasa);
+    pick(g, p.userData);
+  }
+  for (const e of casa.estancias) {
+    const g = new THREE.ShapeGeometry(new THREE.Shape(e.poligono.map(q => new THREE.Vector2(q[0] / 100, -q[1] / 100))));
+    g.rotateX(-Math.PI / 2); g.translate(0, 0.003, 0); g.applyMatrix4(matrizCasa);
+    pick(g, { ambito: 'estancia', estancia: e.id });
   }
 
   // caja de la casa en coords del mundo
@@ -204,7 +236,7 @@ function reconstruir() {
   const ventana = vp && { ...vp, centro: vp.centro.clone().applyMatrix4(matrizCasa), n: vp.n.clone().transformDirection(matrizCasa), dir: vp.dir.clone().transformDirection(matrizCasa) };
   luces.montar({ focos: casaR.focos.map(f => f.p.clone().applyMatrix4(matrizCasa)), ventana, cx: cajaMundo.cx, cz: cajaMundo.cz, R: cajaMundo.R }, ledes, mundo);
 
-  if (seleccion && !k.tramos[seleccion.tramo]?.[seleccion.idx]) seleccion = null;
+  seleccion = selValida(seleccion);
   marcarSeleccion(); marcarEstancia();
   aplicarLuz();
   luces.actualizarFocos(mundo.worldToLocal(camera.position.clone()));
@@ -224,7 +256,8 @@ app.aplicarLuz = aplicarLuz;
 
 function marcarSeleccion() {
   marcaSel.geometry.dispose();
-  const p = seleccion && picksGrupo.children.find(m => m.userData.tramo === seleccion.tramo && m.userData.idx === seleccion.idx);
+  const s = seleccion, igual = u => u.ambito === s.ambito && (s.ambito === 'modulo' ? u.tramo === s.tramo && u.idx === s.idx : u.estancia === s.estancia && u.id === s.id);
+  const p = s && s.ambito !== 'estancia' && picksGrupo.children.find(m => igual(m.userData));
   if (!p) { marcaSel.geometry = new THREE.BufferGeometry(); marcaSel.visible = false; return; }
   marcaSel.geometry = new THREE.EdgesGeometry(p.geometry); marcaSel.visible = true;
 }
@@ -379,13 +412,10 @@ lienzo.addEventListener('pointerup', e => {
   const nd = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   ray.setFromCamera(nd, camera);
   const hit = ray.intersectObjects(picksGrupo.children, false)[0];
-  if (hit) { app.seleccionar({ tramo: hit.object.userData.tramo, idx: hit.object.userData.idx }); return; }
-  // si no es un mueble, ¿qué estancia es?
-  const s = casaR && ray.intersectObjects(casaR.suelos, false)[0];
-  const est = s && estanciaEn(s.point);
-  if (est) casaSel = { estancia: est.id, borde: null, hueco: null };
+  // un tabique visible delante tapa lo que hay detrás
+  const muro = hit && casaR && ray.intersectObjects(casaR.instancias.filter(m => m.name === 'muro'), false)[0];
+  if (hit && !(muro && muro.distance < hit.distance - 0.02)) { app.seleccionar(hit.object.userData); return; }
   app.seleccionar(null);
-  marcarEstancia();
 });
 
 // ---------- bucle ----------
