@@ -27,14 +27,20 @@ export function normalDesde(canvas, fuerza = 2) {
   const w = canvas.width, h = canvas.height;
   const src = canvas.getContext('2d').getImageData(0, 0, w, h).data;
   const [c, g] = lienzo(w, h);
-  const out = g.createImageData(w, h);
-  const H = (x, y) => src[(((y + h) % h) * w + ((x + w) % w)) * 4] / 255;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const dx = (H(x - 1, y) - H(x + 1, y)) * fuerza;
-    const dy = (H(x, y + 1) - H(x, y - 1)) * fuerza;
-    const l = Math.hypot(dx, dy, 1);
-    const i = (y * w + x) * 4;
-    out.data[i] = (dx / l * 0.5 + 0.5) * 255; out.data[i + 1] = (dy / l * 0.5 + 0.5) * 255; out.data[i + 2] = (1 / l * 0.5 + 0.5) * 255; out.data[i + 3] = 255;
+  const out = g.createImageData(w, h); const o = out.data;
+  // alturas en un Float32Array y vecinos sin módulo por píxel (antes ~0,8 s por lienzo de 1024²)
+  const alt = new Float32Array(w * h), k = fuerza / 255;
+  for (let i = 0; i < w * h; i++) alt[i] = src[i * 4] * k;
+  for (let y = 0; y < h; y++) {
+    const fila = y * w, arriba = ((y + 1) % h) * w, abajo = ((y - 1 + h) % h) * w;
+    for (let x = 0; x < w; x++) {
+      const xi = x === 0 ? w - 1 : x - 1, xd = x === w - 1 ? 0 : x + 1;
+      const dx = alt[fila + xi] - alt[fila + xd];
+      const dy = alt[arriba + x] - alt[abajo + x];
+      const il = 0.5 / Math.sqrt(dx * dx + dy * dy + 1);
+      const i = (fila + x) * 4;
+      o[i] = (dx * il + 0.5) * 255; o[i + 1] = (dy * il + 0.5) * 255; o[i + 2] = (il + 0.5) * 255; o[i + 3] = 255;
+    }
   }
   g.putImageData(out, 0, 0);
   return c;
@@ -90,12 +96,16 @@ function pintarMadera(color, seed, N = 1024) {
       ctx.stroke();
     }
   };
+  // las vetas se trazan una sola vez en una capa y se vuelcan en el color y en la rugosidad (la mitad de trazos en CPU)
+  const [capa, gc] = lienzo(N, N);
   for (let i = 0; i < 900; i++) {
     const x0 = r() * N, a1 = 2 + r() * 7, f1 = 1 + ((r() * 2) | 0), ph = r() * 6.28, a2 = r() * 2.5, f2 = 3 + ((r() * 5) | 0);
     const lw = 0.4 + r() * r() * 2.6, al = 0.05 + r() * 0.2;
-    veta(g, a => rgba(osc, a), x0, a1, f1, ph, a2, f2, lw, al);
-    veta(gr, a => `rgba(205,205,205,${a})`, x0, a1, f1, ph, a2, f2, lw, al);
+    veta(gc, a => rgba(osc, a), x0, a1, f1, ph, a2, f2, lw, al);
   }
+  g.drawImage(capa, 0, 0);
+  gc.globalCompositeOperation = 'source-in'; gc.fillStyle = 'rgb(205,205,205)'; gc.fillRect(0, 0, N, N);
+  gr.drawImage(capa, 0, 0);
   // catedrales (vetas en V)
   for (let k = 0; k < 5; k++) {
     const cx = r() * N, y0 = r() * N, w = 40 + r() * 70, alto = N * (0.25 + r() * 0.3);
@@ -113,10 +123,10 @@ function pintarMadera(color, seed, N = 1024) {
     }
   }
   // poros
+  g.fillStyle = rgba(osc, 0.25); gr.fillStyle = 'rgba(225,225,225,0.4)';
   for (let i = 0; i < 5000; i++) {
     const x = r() * N, y = r() * N, l = 2 + r() * 7;
-    g.fillStyle = rgba(osc, 0.25); g.fillRect(x, y, 0.8, l);
-    gr.fillStyle = 'rgba(225,225,225,0.4)'; gr.fillRect(x, y, 0.8, l);
+    g.fillRect(x, y, 0.8, l); gr.fillRect(x, y, 0.8, l);
   }
   ruidoGrano(g, N, N, r, 10);
   return [c, cr];
@@ -301,25 +311,102 @@ export function cepillado(metros = [0.4, 0.4]) {
 }
 
 // ---------- Placa de inducción (UV propias 0..1) ----------
+// Serigrafía fina como la real: aros de trazo de medio milímetro, marcas de centrado y mandos táctiles pequeños.
 export function texPlaca(tipo = 'induccion') {
   return cacheada('placa:' + tipo, () => {
-    const W = 1024, H = 900; const [c, g] = lienzo(W, H);
-    const gg = g.createLinearGradient(0, 0, W, H); gg.addColorStop(0, '#151517'); gg.addColorStop(1, '#0b0b0c');
+    const W = 2048, H = 1800; const [c, g] = lienzo(W, H);
+    const gg = g.createLinearGradient(0, 0, W, H); gg.addColorStop(0, '#141416'); gg.addColorStop(1, '#0a0a0b');
     g.fillStyle = gg; g.fillRect(0, 0, W, H);
-    g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = 3;
-    const zonas = [[300, 330, 190], [730, 300, 150], [700, 640, 120]];
+    // marco serigrafiado a 1 cm del borde
+    g.strokeStyle = 'rgba(255,255,255,0.10)'; g.lineWidth = 2; g.strokeRect(36, 36, W - 72, H - 72);
+    const tinta = a => `rgba(236,236,236,${a})`;
+    const zonas = [[600, 660, 380], [1460, 600, 300], [1400, 1280, 240]];
     for (const [x, y, rr] of zonas) {
+      g.strokeStyle = tinta(0.30); g.lineWidth = 2.2;
       g.beginPath(); g.arc(x, y, rr, 0, 6.283); g.stroke();
-      g.lineWidth = 2; for (const a of [0, 1.57, 3.14, 4.71]) { g.beginPath(); g.moveTo(x + Math.cos(a) * (rr - 18), y + Math.sin(a) * (rr - 18)); g.lineTo(x + Math.cos(a) * (rr + 0), y + Math.sin(a) * (rr + 0)); g.stroke(); }
-      g.lineWidth = 3;
+      // segundo aro discontinuo (zona ampliable)
+      g.setLineDash([10, 14]); g.strokeStyle = tinta(0.16); g.lineWidth = 1.6;
+      g.beginPath(); g.arc(x, y, rr - 34, 0, 6.283); g.stroke(); g.setLineDash([]);
+      // marcas de centrado
+      g.strokeStyle = tinta(0.28); g.lineWidth = 2;
+      for (const a of [0, 1.5708, 3.1416, 4.7124]) {
+        g.beginPath(); g.moveTo(x + Math.cos(a) * (rr + 10), y + Math.sin(a) * (rr + 10)); g.lineTo(x + Math.cos(a) * (rr + 34), y + Math.sin(a) * (rr + 34)); g.stroke();
+      }
     }
-    // mandos táctiles
-    g.fillStyle = 'rgba(255,255,255,0.35)'; g.font = '28px sans-serif';
-    for (let i = 0; i < 9; i++) g.fillText(String(i + 1), 230 + i * 45, 830);
-    g.fillRect(200, 790, 460, 2);
-    g.beginPath(); g.arc(120, 815, 20, 0, 6.283); g.strokeStyle = 'rgba(255,255,255,0.35)'; g.stroke();
-    g.fillStyle = 'rgba(255,255,255,0.25)'; g.font = '22px sans-serif'; g.fillText('3,5 kW', 850, 830);
-    const t = aTextura(c, [1, 1]); t.repeat.set(1, 1); return t;
+    // mandos táctiles: banda de deslizamiento con muescas, números pequeños y teclas redondas
+    const yb = 1640;
+    g.fillStyle = tinta(0.22); g.fillRect(420, yb - 36, 900, 2);
+    for (let i = 0; i <= 18; i++) { const x = 420 + i * 50; g.fillRect(x, yb - 48, 2, i % 2 ? 8 : 14); }
+    g.fillStyle = tinta(0.32); g.font = '24px sans-serif'; g.textAlign = 'center';
+    for (let i = 0; i <= 9; i++) g.fillText(i === 9 ? 'P' : String(i), 420 + i * 100, yb + 6);
+    g.strokeStyle = tinta(0.30); g.lineWidth = 2;
+    // iconos dibujados a trazo (nada de glifos raros que en las gafas salgan como cuadros)
+    const yi = yb - 12;
+    for (const x of [200, 300, 1440, 1540, 1700]) { g.beginPath(); g.arc(x, yi, 26, 0, 6.283); g.stroke(); }
+    g.lineWidth = 2.4; g.strokeStyle = tinta(0.38);
+    g.beginPath(); g.arc(200, yi + 2, 11, -1.1, 4.25); g.stroke(); g.beginPath(); g.moveTo(200, yi - 13); g.lineTo(200, yi); g.stroke(); // encendido
+    g.beginPath(); g.arc(300, yi, 11, 0, 6.283); g.stroke(); g.beginPath(); g.moveTo(300, yi); g.lineTo(300, yi - 8); g.lineTo(306, yi); g.stroke(); // temporizador
+    g.beginPath(); g.moveTo(1430, yi); g.lineTo(1450, yi); g.moveTo(1530, yi); g.lineTo(1550, yi); g.moveTo(1540, yi - 10); g.lineTo(1540, yi + 10); g.stroke(); // − +
+    g.strokeRect(1691, yi - 2, 18, 13); g.beginPath(); g.arc(1700, yi - 3, 6, 3.1416, 0); g.stroke(); // bloqueo
+    g.fillStyle = tinta(0.18); g.font = '20px sans-serif'; g.textAlign = 'right'; g.fillText('7,4 kW', W - 70, 110);
+    const t = aTextura(c, [1, 1]); t.repeat.set(1, 1); t.anisotropy = 16; return t;
+  });
+}
+
+// ---------- Oscurecimiento de contacto horneado ----------
+// Lienzo 256 x 128 en dos mitades: a la izquierda un degradado lineal (v = 0 pegado al contacto, se aclara hacia v = 1;
+// en u se funde en los extremos 0..0,094 y 0,406..0,5, y en u = 0,25 es constante); a la derecha una mancha radial.
+// Solo negro con alfa: el material lo pinta encima de lo que haya (suelo, pared, encimera…).
+export function contacto() {
+  return cacheada('contacto', () => {
+    const W = 256, H = 128; const [c, g] = lienzo(W, H);
+    const img = g.createImageData(W, H); const d = img.data;
+    const suave = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    for (let y = 0; y < H; y++) {
+      const v = 1 - (y + 0.5) / H; // flipY: la fila de abajo del lienzo es v = 0
+      const caida = Math.pow(1 - v, 2.4) * 0.92;
+      for (let x = 0; x < W; x++) {
+        let a;
+        if (x < 128) a = caida * suave(0, 24, x) * suave(0, 24, 127 - x);
+        else { const dx = (x - 191.5) / 64, dy = (y - 63.5) / 64; const r = Math.hypot(dx, dy); a = 0.62 * Math.pow(Math.max(0, 1 - r), 1.8); }
+        const i = (y * W + x) * 4; d[i] = d[i + 1] = d[i + 2] = 0; d[i + 3] = Math.round(a * 255);
+      }
+    }
+    g.putImageData(img, 0, 0);
+    const t = aTextura(c, [1, 1], false); t.repeat.set(1, 1); t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 4;
+    return t;
+  });
+}
+
+// ---------- Paleta de la decoración (atlas 8 x 8 celdas de 64 px) ----------
+// Una sola textura y un solo material para todos los objetos decorativos → una malla.
+export const CELDAS_DECO = {
+  ceramica: 0, ceramicaVerde: 1, naranja: 2, manzanaRoja: 3, manzanaVerde: 4, limon: 5, madera: 6, maderaOscura: 7,
+  negro: 8, terracota: 9, tierra: 10, hoja: 11, hojaClara: 12, tallo: 13, pano: 14, corcho: 15, cuero: 16, metal: 17, bote: 18, rabito: 19,
+};
+export function paletaDeco() {
+  return cacheada('paletaDeco', () => {
+    const N = 512, C = 64; const r = rng(71);
+    const [c, g] = lienzo(N, N); const [cr, gr] = lienzo(N, N);
+    const def = [
+      ['#f1efe9', 70], ['#7f9a86', 80], ['#e57f22', 120], ['#a8232a', 70], ['#8fb03c', 85], ['#e6cc45', 125], ['#c49a6c', 150], ['#6e4a2e', 140],
+      ['#1e1e1f', 120], ['#b0603c', 215], ['#3a2a1f', 250], ['#3d6a33', 110], ['#5f8e45', 115], ['#36552a', 160], ['#f2f0ea', 235], ['#a88a62', 210],
+      ['#5a3f2e', 135], ['#9c9d9f', 85], ['#e4e0d8', 160], ['#4a3420', 200],
+    ];
+    def.forEach(([col, rug], i) => {
+      const x = (i % 8) * C, y = ((i / 8) | 0) * C;
+      g.fillStyle = col; g.fillRect(x, y, C, C);
+      gr.fillStyle = `rgb(${rug},${rug},${rug})`; gr.fillRect(x, y, C, C);
+      if (i === CELDAS_DECO.pano) { g.fillStyle = '#3d5f86'; for (let k = 0; k < 4; k++) g.fillRect(x, y + 6 + k * 16, C, 3 + (k % 2) * 3); }
+      if (i === CELDAS_DECO.madera || i === CELDAS_DECO.maderaOscura) {
+        for (let k = 0; k < 26; k++) { g.fillStyle = `rgba(60,35,15,${0.05 + r() * 0.12})`; g.fillRect(x, y + r() * C, C, 0.6 + r() * 1.4); }
+      }
+      if (i === CELDAS_DECO.tierra || i === CELDAS_DECO.terracota || i === CELDAS_DECO.naranja || i === CELDAS_DECO.limon) {
+        for (let k = 0; k < 220; k++) { g.fillStyle = `rgba(${r() < 0.5 ? '0,0,0' : '255,255,255'},${0.05 + r() * 0.07})`; g.fillRect(x + r() * C, y + r() * C, 1.2, 1.2); }
+      }
+    });
+    const prep = (cv, srgb) => { const t = aTextura(cv, [1, 1], srgb); t.repeat.set(1, 1); t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t; };
+    return { map: prep(c, true), roughnessMap: prep(cr, false) };
   });
 }
 

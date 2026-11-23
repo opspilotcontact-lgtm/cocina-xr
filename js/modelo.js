@@ -61,6 +61,7 @@ export function estadoInicial() {
       serie: 'bormujos', serieAltos: 'igual', tirador: 'barra', encimera: 'blanco', acabadoEncimera: 'mate',
       grosorEncimera: 'normal', frontal: 'azulejo', zocalo: 'aluminio', suelo: 'porcelanico', pared: 'blanco',
       campana: 'piramidal', placa: 'induccion', horno: 'inox', frigo: 'integrado',
+      decoracion: true, // frutero, botes, planta, tabla, paño y taburetes (en los huecos libres); estados antiguos sin el campo = true
     },
     luz: { hora: 11, led: true, techo: false },
     tramos: { A: [], B: [], C: [], D: [] },
