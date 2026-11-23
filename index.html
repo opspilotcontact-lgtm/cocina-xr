@@ -25,7 +25,7 @@
   #panel > header { padding: 14px 16px 10px; display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--linea); }
   #panel > header h1 { font-size: 16px; margin: 0; letter-spacing: .01em; }
   #panel > header small { color: var(--suave); font-size: 12px; }
-  #pestanas { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--linea); }
+  #pestanas { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--linea); }
   #pestanas button { border: 0; border-right: 1px solid var(--linea); padding: 11px 4px; background: transparent; font-weight: 600; }
   #pestanas button:last-child { border-right: 0; }
   #pestanas button.on { background: var(--tinta); color: #fff; }
@@ -77,18 +77,69 @@
   #barra .sep { flex: 1; }
   #barra button { height: 36px; }
   #btnVR, #btnAR { background: var(--tinta); color: #fff; border-color: var(--tinta); font-weight: 600; padding: 0 14px; }
+  #mallas { font-size: 11px; color: var(--suave); font-variant-numeric: tabular-nums; }
   #fps { font-size: 11px; color: var(--suave); font-variant-numeric: tabular-nums; min-width: 120px; text-align: right; }
   #btnPanel { display: none; }
+  /* pestaña Casa */
+  .plantillas { display: grid; grid-template-columns: 1fr; gap: 4px; }
+  .plantillas button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
+  .plantillas small, .estancia small { color: var(--suave); font-size: 11px; }
+  .estancias { display: flex; flex-direction: column; gap: 4px; }
+  .estancia { display: flex; gap: 4px; }
+  .estancia .nombre { flex: 1; display: grid; grid-template-columns: 12px 1fr auto; align-items: center; gap: 8px; text-align: left; }
+  .estancia .nombre i { width: 12px; height: 12px; border: 1px solid rgba(0,0,0,.15); }
+  .estancia.on .nombre { outline: 2px solid var(--acento); outline-offset: -2px; }
+  .estancia .nombre:not(:has(i)) { grid-template-columns: 1fr auto; }
+  input.texto { padding: 7px 8px; border: 1px solid var(--linea); background: #fff; font-size: 13px; color: var(--tinta); min-width: 0; }
+  .revision { margin: 0; padding: 0 0 0 16px; font-size: 12px; line-height: 1.5; }
+  .revision .error { color: var(--peligro); }
+  .revision .aviso { color: #8a6400; }
+  .hueco-ed { margin-top: 8px; padding: 10px; background: #fff; border: 1px solid var(--linea); display: flex; flex-direction: column; gap: 8px; }
+  .seg.cocinas { margin-top: 12px; }
+
+  /* plano 2D */
+  #plano { position: fixed; top: 12px; right: 12px; bottom: 76px; left: 376px; background: #f4f1ea; box-shadow: var(--sombra); z-index: 4; display: flex; flex-direction: column; }
+  .plano-barra { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 8px; border-bottom: 1px solid var(--linea); background: var(--panel); }
+  .plano-barra .grupo { display: flex; gap: 4px; flex-wrap: wrap; }
+  .plano-barra select { padding: 6px; border: 1px solid var(--linea); background: #fff; font-size: 13px; }
+  .plano-svg { flex: 1; width: 100%; min-height: 0; touch-action: none; user-select: none; }
+  .plano-pie { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 10px; font-size: 12px; color: var(--suave); border-top: 1px solid var(--linea); background: var(--panel); }
+  .plano-pie .mal { color: var(--peligro); } .plano-pie .bien { color: #2e7d32; } .plano-pie .ayuda { margin-left: auto; }
+  .plano-svg .rejilla line { stroke: #e2ddd2; stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .plano-svg .est { stroke: none; cursor: pointer; }
+  .plano-svg .est.sel { filter: brightness(1.04); stroke: var(--acento); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .plano-svg .tab { fill: #3b3a36; }
+  .plano-svg .tab.ext { fill: #24231f; }
+  .plano-svg .borde { stroke: transparent; cursor: move; vector-effect: non-scaling-stroke; }
+  .plano-svg .borde:hover { stroke: rgba(255,106,43,.25); }
+  .plano-svg .borde.sel { stroke: rgba(255,106,43,.55); }
+  .plano-svg .vano { fill: #f4f1ea; }
+  .plano-svg .hueco { cursor: ew-resize; }
+  .plano-svg .hueco .hoja { stroke: #3b3a36; stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .plano-svg .hueco .arco { fill: none; stroke: #8b877e; stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+  .plano-svg .hueco .cristal { stroke: #5b8db8; stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+  .plano-svg .hueco.sel .vano { fill: #ffd9c8; }
+  .plano-svg .vert { fill: #fff; stroke: #3b3a36; stroke-width: 1.5; vector-effect: non-scaling-stroke; cursor: grab; }
+  .plano-svg .vert:hover { fill: var(--acento); }
+  .plano-svg text { text-anchor: middle; dominant-baseline: middle; fill: #4a4740; pointer-events: none; font-family: inherit; }
+  .plano-svg .nombre { font-weight: 600; fill: var(--tinta); }
+  .plano-svg .m2 { fill: var(--suave); }
+  .plano-svg .cotas text { fill: #6d6960; font-variant-numeric: tabular-nums; }
+  .plano-svg .cotas text.sel { fill: var(--acento); font-weight: 700; }
+  body.con-plano #inspector { display: none; }
+
   #aviso { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); background: var(--tinta); color: #fff; padding: 10px 16px; font-size: 13px; z-index: 20; }
 
   @media (max-width: 760px) {
+    #plano { top: 0; left: 0; right: 0; bottom: 64px; }
+    .plano-pie .ayuda { display: none; }
     #panel { top: auto; left: 0; right: 0; bottom: 64px; width: auto; height: 46vh; transform: translateY(calc(100% - 44px)); transition: transform .25s; }
     body.panel-abierto #panel { transform: none; }
     #panel > header { display: none; }
     #inspector { left: 8px; right: 8px; width: auto; top: 8px; }
     #barra { left: 0; right: 0; bottom: 0; height: 64px; overflow-x: auto; padding-bottom: env(safe-area-inset-bottom); }
     #btnPanel { display: block; }
-    #fps { display: none; }
+    #fps, #mallas { display: none; }
     .muestras { grid-template-columns: repeat(4, 1fr); }
   }
 </style>
@@ -100,6 +151,7 @@
 <aside id="panel">
   <header><h1>Cocina XR</h1><small>prototipo · sin precios</small></header>
   <nav id="pestanas">
+    <button data-p="casa">Casa</button>
     <button data-p="espacio">Espacio</button>
     <button data-p="estilo">Estilo</button>
     <button data-p="electro">Electro</button>
@@ -109,6 +161,7 @@
 </aside>
 
 <section id="inspector" hidden></section>
+<section id="plano" hidden></section>
 
 <footer id="barra">
   <button id="btnPanel">Opciones</button>
@@ -117,6 +170,7 @@
     <button data-vista="dentro">Dentro</button>
     <button data-vista="detalle">Detalle</button>
     <button data-vista="planta">Planta</button>
+    <button data-vista="plano" title="Editor de planta 2D">Plano</button>
     <button data-vista="paseo" title="WASD para andar, Esc para salir">Paseo</button>
   </div>
   <div class="grupo">
@@ -125,6 +179,7 @@
   </div>
   <span class="sep"></span>
   <span id="fps"></span>
+  <span id="mallas"></span>
   <button id="btnVR" disabled title="Necesita unas gafas con WebXR (Quest)">Entrar en RV</button>
   <button id="btnAR" disabled title="Realidad mixta: ves tu cocina real con la nueva encima">Entrar en RM</button>
 </footer>
