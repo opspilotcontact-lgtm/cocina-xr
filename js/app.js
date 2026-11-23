@@ -164,6 +164,9 @@ const app = {
   get cocinaGrupo() { return cocinaGrupo; },
   get dims() { const e = app.estado; return { W: e.sala.A / 100, D: fondoSala(e), H: e.sala.alto / 100 }; },
   get cajaCasa() { return cajaMundo; },
+  // [xr-estancias] planta (m) → coords del mundo, y suelos de la casa (fusionados por material)
+  get matrizCasa() { return matrizCasa; },
+  get suelos() { return casaR?.suelos || []; },
   // mallas que se dibujan (sin contar picks invisibles ni la marca de selección)
   mallas() {
     const r = { total: 0, casa: 0, cocina: 0, sombras: 0, instancias: 0 };
