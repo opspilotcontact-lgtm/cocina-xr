@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Prueba baño</title>
+<style>
+  :root { --tinta: #1f1f1d; --suave: #77736b; --linea: #e3dfd8; --panel: #fbfaf7; --error: #b3261e; --aviso: #b07800; font-family: system-ui, "Segoe UI", Roboto, sans-serif; color: var(--tinta); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #d9d6d0; }
+  #lienzo { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #panel { position: fixed; top: 10px; left: 10px; bottom: 10px; width: 300px; background: var(--panel); box-shadow: 0 6px 24px rgba(0,0,0,.12); overflow: auto; padding: 10px 14px 16px; font-size: 12.5px; z-index: 2; }
+  h1 { font-size: 15px; margin: 2px 0 6px; }
+  h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--suave); margin: 14px 0 6px; font-weight: 600; }
+  .fila { display: grid; grid-template-columns: 1fr 1.2fr; align-items: center; gap: 6px; margin: 3px 0; }
+  .fila span { color: var(--suave); }
+  select, input { font: inherit; padding: 4px 6px; border: 1px solid var(--linea); background: #fff; width: 100%; }
+  input[type=checkbox] { width: auto; justify-self: start; }
+  .botones { display: flex; flex-wrap: wrap; gap: 4px; }
+  button { font: inherit; cursor: pointer; border: 1px solid var(--linea); background: #fff; padding: 5px 8px; }
+  button:hover { border-color: var(--tinta); }
+  #avisos { list-style: none; padding: 0; margin: 0; }
+  #avisos li { padding: 5px 7px; margin: 3px 0; background: #fff; border-left: 3px solid var(--suave); line-height: 1.35; }
+  #avisos li.error { border-color: var(--error); } #avisos li.aviso { border-color: var(--aviso); }
+  #estado { position: fixed; right: 10px; bottom: 10px; background: var(--panel); padding: 6px 10px; font-size: 12px; font-variant-numeric: tabular-nums; z-index: 2; }
+  #sel { position: fixed; right: 10px; top: 10px; background: var(--panel); padding: 6px 10px; font-size: 12px; z-index: 2; }
+  #sel:empty { display: none; }
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+</head>
+<body>
+<canvas id="lienzo"></canvas>
+<aside id="panel"><h1>Prueba · baño</h1><div id="controles"></div><h3>Avisos</h3><ul id="avisos"></ul></aside>
+<div id="estado"></div>
+<div id="sel"></div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import { fusionar, liberar } from '../js/geo.js';
+import { construirBano, construirSalaBano, medirGrupo } from '../js/bano.js';
+import { materialesBano } from '../js/bano-materiales.js';
+import * as B from '../js/bano-modelo.js';
+
+RectAreaLightUniformsLib.init();
+const lienzo = document.getElementById('lienzo');
+const renderer = new THREE.WebGLRenderer({ canvas: lienzo, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#d9d6d0');
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.45;
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.03, 60);
+const orbit = new OrbitControls(camera, lienzo);
+orbit.enableDamping = true; orbit.dampingFactor = 0.08;
+
+// luces parecidas a las de la app: hemisférica + direccional con sombra + focos de techo + LED del espejo
+const hemi = new THREE.HemisphereLight('#e8eef5', '#8f8578', 0.45); scene.add(hemi);
+const sol = new THREE.DirectionalLight('#fff3e2', 1.6);
+sol.castShadow = true; sol.shadow.mapSize.set(2048, 2048); sol.shadow.bias = -0.0003; sol.shadow.normalBias = 0.02; sol.shadow.radius = 3;
+scene.add(sol, sol.target);
+const mundo = new THREE.Group(); scene.add(mundo);
+let extras = [];
+
+const params = new URLSearchParams(location.search);
+let estado = B.nuevoBano({ ancho: 200, fondo: 250 });
+let sala = null, bano = null, picksG = new THREE.Group(), seleccion = null, ultimoReparto = [];
+mundo.add(picksG);
+
+function reconstruir() {
+  const t0 = performance.now();
+  const mats = materialesBano(estado);
+  for (const o of [sala?.grupo, bano]) if (o) { mundo.remove(o); liberar(o); }
+  for (const l of extras) l.parent?.remove(l);
+  for (const p of [...picksG.children]) { picksG.remove(p); p.geometry.dispose(); }
+  sala = construirSalaBano(estado, mats);
+  mundo.add(sala.grupo);
+  const { lote, picks, luces } = construirBano(estado);
+  bano = fusionar(lote, mats); bano.name = 'bano';
+  mundo.add(bano);
+  const matPick = new THREE.MeshBasicMaterial();
+  for (const p of picks) {
+    const g = new THREE.BoxGeometry(p.x1 - p.x0, p.y1 - p.y0, p.z1 - p.z0);
+    g.translate((p.x0 + p.x1) / 2, (p.y0 + p.y1) / 2, (p.z0 + p.z1) / 2); g.applyMatrix4(p.R);
+    const m = new THREE.Mesh(g, matPick); m.visible = false; m.userData = { id: p.id, tipo: p.tipo }; picksG.add(m);
+  }
+  extras = sala.focos.map(p => { const l = new THREE.PointLight('#fff0dc', 2.2, 6, 2); l.position.copy(p); mundo.add(l); return l; });
+  for (const d of luces) {
+    const r = new THREE.RectAreaLight('#fff1dc', 2.5, d.x1 - d.x0, 0.05);
+    const p = new THREE.Vector3((d.x0 + d.x1) / 2, d.y, d.z).applyMatrix4(d.R);
+    r.position.copy(p); r.up.set(d.n[0], 0, d.n[1]); r.lookAt(p.x, p.y - 1, p.z);
+    mundo.add(r); extras.push(r);
+  }
+  const W = sala.W, D = sala.D;
+  sol.target.position.set(W / 2, 0.5, D / 2); sol.position.set(W / 2 + 2.5, 6, D / 2 + 3.5);
+  const cam = sol.shadow.camera; const R = Math.max(W, D) + 1; cam.left = -R; cam.right = R; cam.top = R; cam.bottom = -R; cam.near = 1; cam.far = 20; cam.updateProjectionMatrix();
+  const mb = medirGrupo(bano), ms = medirGrupo(sala.grupo);
+  window.prueba.medidas = { bano: mb, sala: ms, ms: Math.round(performance.now() - t0) };
+  document.getElementById('estado').textContent = `baño: ${mb.mallas} mallas · ${mb.triangulos.toLocaleString('es')} triángulos  |  sala: ${ms.mallas} mallas · ${ms.triangulos.toLocaleString('es')}  |  ${Math.round(performance.now() - t0)} ms`;
+  pintarAvisos();
+}
+
+function pintarAvisos() {
+  const ul = document.getElementById('avisos');
+  const av = [...ultimoReparto, ...B.validar(estado)];
+  window.prueba.avisos = av;
+  ul.replaceChildren(...(av.length ? av : [{ nivel: 'ok', texto: 'Todo en orden.' }]).map(a => { const li = document.createElement('li'); li.className = a.nivel; li.textContent = a.texto; return li; }));
+}
+
+function repartir() { ultimoReparto = B.autodistribuir(estado).avisos; }
+
+// ---------- panel ----------
+const el = tipo => B.primero(estado, tipo);
+const ctrl = document.getElementById('controles');
+function h(tag, props = {}, ...hijos) { const n = document.createElement(tag); Object.assign(n, props); n.append(...hijos.flat()); return n; }
+function fila(txt, campo) { return h('label', { className: 'fila' }, h('span', {}, txt), campo); }
+function sel(txt, opciones, get, set, { reparte = false } = {}) {
+  const ops = Array.isArray(opciones) ? Object.fromEntries(opciones.map(o => [o, String(o)])) : opciones;
+  const s = h('select', {}, Object.entries(ops).map(([k, v]) => h('option', { value: k }, typeof v === 'string' ? v : v.nombre)));
+  s.value = String(get());
+  s.onchange = () => { const raw = s.value; set(isNaN(+raw) || raw === '' ? raw : +raw); if (reparte) repartir(); aplicar(); };
+  return fila(txt, s);
+}
+function chk(txt, get, set, { reparte = false } = {}) {
+  const c = h('input', { type: 'checkbox', checked: !!get() });
+  c.onchange = () => { set(c.checked); if (reparte) repartir(); aplicar(); };
+  return fila(txt, c);
+}
+function num(txt, get, set, { reparte = true } = {}) {
+  const i = h('input', { type: 'number', value: get(), step: 5 });
+  i.onchange = () => { set(+i.value); if (reparte) repartir(); aplicar(); };
+  return fila(txt, i);
+}
+const pieza = (tipo, campo) => [() => el(tipo)?.[campo], v => { const q = el(tipo); if (q) q[campo] = v; }];
+
+function montarPanel() {
+  const s = estado, st = s.estilo;
+  const bloques = [
+    h('h3', {}, 'Pruebas'),
+    h('div', { className: 'botones' },
+      h('button', { onclick: () => preset(1) }, '1 · ducha 30×60'),
+      h('button', { onclick: () => preset(2) }, '2 · bañera metro'),
+      h('button', { onclick: () => preset(3) }, '3 · negro hex'),
+      h('button', { onclick: () => { repartir(); aplicar(); } }, 'Repartir'),
+    ),
+    h('div', { className: 'botones', style: 'margin-top:4px' },
+      h('button', { onclick: () => vista('planta') }, 'Planta'), h('button', { onclick: () => vista('ducha') }, 'Ducha'),
+      h('button', { onclick: () => vista('lavabo') }, 'Lavabo'), h('button', { onclick: () => vista('dentro') }, 'Dentro')),
+    h('h3', {}, 'Sala'),
+    sel('Medidas', { '160x220': '1,6 × 2,2 m', '200x250': '2 × 2,5 m', '250x300': '2,5 × 3 m', libre: 'A mano' },
+      () => ['160x220', '200x250', '250x300'].includes(`${s.sala.ancho}x${s.sala.fondo}`) ? `${s.sala.ancho}x${s.sala.fondo}` : 'libre',
+      v => { if (v !== 'libre') { const [a, f] = v.split('x').map(Number); s.sala.ancho = a; s.sala.fondo = f; } }, { reparte: true }),
+    num('Ancho (A) cm', () => s.sala.ancho, v => { s.sala.ancho = v; }),
+    num('Fondo (B) cm', () => s.sala.fondo, v => { s.sala.fondo = v; }),
+    num('Alto cm', () => s.sala.alto, v => { s.sala.alto = v; }, { reparte: false }),
+    sel('Puerta en', { A: 'A', B: 'B', C: 'C', D: 'D' }, () => s.puerta.pared, v => { s.puerta.pared = v; }, { reparte: true }),
+    num('Puerta desde cm', () => s.puerta.x, v => { s.puerta.x = v; }),
+    sel('Puerta abre', { dentro: 'Hacia dentro', fuera: 'Hacia fuera', corredera: 'Corredera' }, () => s.puerta.abre, v => { s.puerta.abre = v; }, { reparte: true }),
+    chk('Ventana', () => s.ventana.activa, v => { s.ventana.activa = v; }),
+    sel('Ventana en', { A: 'A', B: 'B', C: 'C', D: 'D' }, () => s.ventana.pared, v => { s.ventana.pared = v; }),
+    h('h3', {}, 'Reparto'),
+    sel('Zona de agua', { ducha: 'Plato de ducha', banera: 'Bañera' }, () => s.opciones.zonaAgua, v => { s.opciones.zonaAgua = v; }, { reparte: true }),
+    chk('Bidé', () => s.opciones.bide, v => { s.opciones.bide = v; }, { reparte: true }),
+    chk('Radiador toallero', () => s.opciones.radiador, v => { s.opciones.radiador = v; }, { reparte: true }),
+    h('h3', {}, 'Revestimientos'),
+    sel('Alicatado', B.REVESTIMIENTOS, () => st.revestimiento, v => { st.revestimiento = v; }),
+    sel('Color azulejo', B.COLORES_AZULEJO, () => st.colorAzulejo, v => { st.colorAzulejo = v; }),
+    sel('Altura', B.ALTURAS_ALICATADO, () => st.alturaAlicatado, v => { st.alturaAlicatado = v; }),
+    sel('Suelo', B.SUELOS_BANO, () => st.suelo, v => { st.suelo = v; }),
+    sel('Pintura', B.PAREDES_BANO, () => st.pared, v => { st.pared = v; }),
+    sel('Grifería', B.ACABADOS_METAL, () => st.griferia, v => { st.griferia = v; }),
+  ];
+  if (el('mueble')) bloques.push(
+    h('h3', {}, 'Mueble de lavabo'),
+    sel('Ancho', B.ANCHOS_MUEBLE, ...pieza('mueble', 'ancho')),
+    sel('Montaje', B.MONTAJES, ...pieza('mueble', 'montaje')),
+    sel('Frente', B.FRENTES_MUEBLE, ...pieza('mueble', 'frente')),
+    sel('Serie', Object.fromEntries(Object.entries(B.SERIES).map(([k, v]) => [k, `${v.nombre} · ${v.sub}`])), ...pieza('mueble', 'serie')),
+    sel('Lavabo', B.LAVABOS, ...pieza('mueble', 'lavabo')),
+    sel('Senos', [1, 2], ...pieza('mueble', 'senos')),
+    sel('Espejo', B.ESPEJOS, ...pieza('mueble', 'espejo')),
+    chk('Espejo LED', ...pieza('mueble', 'led')),
+  );
+  if (el('inodoro')) bloques.push(
+    h('h3', {}, 'Inodoro'),
+    sel('Montaje', B.MONTAJES, ...pieza('inodoro', 'montaje'), { reparte: true }),
+    sel('Cisterna', B.CISTERNAS, ...pieza('inodoro', 'cisterna'), { reparte: true }),
+  );
+  if (el('ducha')) bloques.push(
+    h('h3', {}, 'Ducha'),
+    num('Fondo plato', ...pieza('ducha', 'fondo'), { reparte: false }),
+    num('Ancho plato', ...pieza('ducha', 'ancho'), { reparte: false }),
+    sel('Color plato', B.COLORES_PLATO, ...pieza('ducha', 'color')),
+    sel('Mampara', B.MAMPARAS, ...pieza('ducha', 'mampara')),
+    sel('Perfil', B.ACABADOS_METAL, ...pieza('ducha', 'perfil')),
+    sel('Rociador', B.ROCIADORES, ...pieza('ducha', 'rociador')),
+    sel('Grifo a la', { izq: 'Izquierda', der: 'Derecha' }, ...pieza('ducha', 'grifoLado')),
+    chk('Hornacina', ...pieza('ducha', 'hornacina')),
+  );
+  if (el('banera')) bloques.push(
+    h('h3', {}, 'Bañera'),
+    sel('Largo', B.LARGOS_BANERA, ...pieza('banera', 'largo')),
+    sel('Mampara', B.MAMPARAS_BANERA, ...pieza('banera', 'mampara')),
+    sel('Perfil', B.ACABADOS_METAL, ...pieza('banera', 'perfil')),
+  );
+  if (el('radiador')) bloques.push(h('h3', {}, 'Radiador'), sel('Acabado', { blanco: 'Blanco', griferia: 'Como la grifería' }, ...pieza('radiador', 'acabado')), num('Alto', ...pieza('radiador', 'alto'), { reparte: false }));
+  ctrl.replaceChildren(...bloques);
+}
+
+function aplicar() { reconstruir(); montarPanel(); }
+
+// Las tres configuraciones de la verificación.
+function preset(n) {
+  if (n === 1) {
+    estado = B.nuevoBano({ ancho: 200, fondo: 250, estilo: { revestimiento: 'r30x60', colorAzulejo: 'blanco', alturaAlicatado: 'completa', griferia: 'cromo', suelo: 'gris' }, opciones: { zonaAgua: 'ducha' } });
+    Object.assign(el('mueble'), { montaje: 'suspendido', serie: 'bormujos', lavabo: 'integrado', espejo: 'rectangular', led: true });
+    Object.assign(el('ducha'), { color: 'blanco', mampara: 'corredera', perfil: 'cromo', rociador: 'techo', hornacina: true });
+  }
+  if (n === 2) {
+    estado = B.nuevoBano({ ancho: 160, fondo: 220, estilo: { revestimiento: 'metro', colorAzulejo: 'blanco', alturaAlicatado: 'media', griferia: 'cromo', suelo: 'beige', pared: 'arena' }, opciones: { zonaAgua: 'banera' } });
+    Object.assign(el('mueble'), { montaje: 'suelo', serie: 'lisboa', frente: 'puertas', lavabo: 'sobre', espejo: 'redondo', led: false });
+    Object.assign(el('inodoro'), { montaje: 'suelo', cisterna: 'vista' });
+    Object.assign(el('banera'), { mampara: 'fija' });
+    repartir();
+  }
+  if (n === 3) {
+    estado = B.nuevoBano({ ancho: 250, fondo: 300, estilo: { revestimiento: 'hexagonal', colorAzulejo: 'verde', alturaAlicatado: 'ducha', griferia: 'negro', suelo: 'antracita', pared: 'blanco' }, opciones: { zonaAgua: 'ducha', bide: true } });
+    Object.assign(el('mueble'), { montaje: 'suspendido', serie: 'segovia', lavabo: 'integrado', espejo: 'redondo', led: true });
+    Object.assign(el('ducha'), { color: 'negro', mampara: 'abatible', perfil: 'negro', rociador: 'columna', hornacina: true });
+  }
+  ultimoReparto = [];
+  aplicar(); vista('planta');
+}
+
+function vista(nombre) {
+  const W = estado.sala.ancho / 100, D = estado.sala.fondo / 100, Hs = estado.sala.alto / 100;
+  const c = new THREE.Vector3(W / 2, 1.0, D / 2);
+  if (nombre === 'planta') { camera.position.set(W / 2 + W * 0.9, Hs + 2.2, D / 2 + D * 1.15); }
+  if (nombre === 'dentro') { camera.position.set(W * 0.7, 1.6, D - 0.15); c.set(W * 0.35, 1.0, 0.3); }
+  const foco = tipo => {
+    const q = B.planta(estado).find(o => o.tipo === tipo); if (!q) return null;
+    const r = q.rect; return new THREE.Vector3((r.x0 + r.x1) / 200, 1.0, (r.z0 + r.z1) / 200);
+  };
+  if (nombre === 'ducha' || nombre === 'lavabo') {
+    const p = foco(nombre === 'ducha' ? (B.primero(estado, 'ducha') ? 'ducha' : 'banera') : 'mueble'); if (p) c.copy(p);
+    const q = B.planta(estado).find(o => o.tipo === (nombre === 'ducha' ? (B.primero(estado, 'ducha') ? 'ducha' : 'banera') : 'mueble'));
+    const n = B.paredesBano(estado)[q.pared].n;
+    camera.position.set(c.x + n[0] * 1.9 + 0.3, 1.55, c.z + n[1] * 1.9 + 0.3);
+    camera.position.x = Math.min(Math.max(camera.position.x, -2), W + 2);
+  }
+  orbit.target.copy(c); orbit.update();
+}
+
+// ocultar las paredes que tapan la vista (cámara por fuera) y el techo desde arriba
+function recortar() {
+  if (!sala) return;
+  const v = new THREE.Vector3();
+  for (const m of sala.muros) { v.copy(camera.position).sub(m.userData.punto); m.visible = v.dot(m.userData.n) > -0.05; }
+}
+
+// selección por clic
+const ray = new THREE.Raycaster(), pt = new THREE.Vector2();
+lienzo.addEventListener('pointerdown', ev => { pt.set(ev.clientX, ev.clientY); });
+lienzo.addEventListener('pointerup', ev => {
+  if (Math.hypot(ev.clientX - pt.x, ev.clientY - pt.y) > 4) return;
+  ray.setFromCamera(new THREE.Vector2(ev.clientX / innerWidth * 2 - 1, -(ev.clientY / innerHeight) * 2 + 1), camera);
+  for (const m of picksG.children) m.visible = true;
+  const hit = ray.intersectObjects(picksG.children, false)[0];
+  for (const m of picksG.children) m.visible = false;
+  seleccion = hit?.object.userData || null;
+  document.getElementById('sel').textContent = seleccion ? `${B.TIPOS[seleccion.tipo]} · ${seleccion.id}` : '';
+});
+
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+window.prueba = { get estado() { return estado; }, set estado(v) { estado = v; aplicar(); }, B, preset, vista, aplicar, renderer, scene, camera, medidas: null, avisos: [] };
+const p0 = +params.get('preset');
+if (p0) preset(p0); else { aplicar(); vista('planta'); }
+renderer.setAnimationLoop(() => { orbit.update(); recortar(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>
