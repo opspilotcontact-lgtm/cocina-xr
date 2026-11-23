@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Cocina XR</title>
+<style>
+  :root {
+    --bg: #f6f4f0; --panel: #fbfaf7; --tinta: #1f1f1d; --suave: #77736b; --linea: #e3dfd8; --acento: #ff6a2b; --peligro: #b3261e;
+    --sombra: 0 1px 2px rgba(0,0,0,.06), 0 8px 30px rgba(0,0,0,.08);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--tinta);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #d9d6d0; }
+  #lienzo { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  button, select, input { font: inherit; color: inherit; }
+  button { cursor: pointer; border: 1px solid var(--linea); background: #fff; padding: 7px 10px; border-radius: 0; font-size: 13px; line-height: 1.2; }
+  button:hover:not(:disabled) { border-color: var(--tinta); }
+  button:disabled { opacity: .4; cursor: default; }
+  button.on { background: var(--tinta); color: #fff; border-color: var(--tinta); }
+
+  #panel { position: fixed; top: 12px; left: 12px; bottom: 76px; width: 352px; background: var(--panel); box-shadow: var(--sombra); display: flex; flex-direction: column; z-index: 5; }
+  #panel > header { padding: 14px 16px 10px; display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--linea); }
+  #panel > header h1 { font-size: 16px; margin: 0; letter-spacing: .01em; }
+  #panel > header small { color: var(--suave); font-size: 12px; }
+  #pestanas { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--linea); }
+  #pestanas button { border: 0; border-right: 1px solid var(--linea); padding: 11px 4px; background: transparent; font-weight: 600; }
+  #pestanas button:last-child { border-right: 0; }
+  #pestanas button.on { background: var(--tinta); color: #fff; }
+  #panelCuerpo { overflow: auto; padding: 4px 16px 20px; flex: 1; }
+  #panelCuerpo h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--suave); margin: 18px 0 8px; font-weight: 600; }
+  .seg { display: flex; flex-wrap: wrap; gap: 4px; }
+  .seg button { flex: 1 1 auto; }
+  .seg.col { flex-direction: column; }
+  .seg.col button { text-align: left; }
+  .seg.chico button { padding: 5px 6px; font-size: 12px; flex: 0 0 auto; min-width: 38px; }
+  .muestras { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .muestra { padding: 0 0 6px; display: flex; flex-direction: column; align-items: stretch; text-align: left; gap: 2px; background: #fff; }
+  .muestra i { display: block; height: 44px; border-bottom: 1px solid var(--linea); }
+  .muestra i.igual { background: repeating-linear-gradient(135deg, #fff 0 6px, #eee 6px 12px); }
+  .muestra b { font-size: 12px; padding: 0 6px; }
+  .muestra small { font-size: 10.5px; color: var(--suave); padding: 0 6px; line-height: 1.2; }
+  .muestra.on { outline: 2px solid var(--tinta); outline-offset: -2px; background: #fff; color: inherit; }
+  .rejilla { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 10px; }
+  .campo { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--suave); }
+  .campo > span { font-weight: 500; }
+  .campo select { padding: 7px 8px; border: 1px solid var(--linea); background: #fff; color: var(--tinta); font-size: 13px; }
+  .num { display: flex; align-items: center; border: 1px solid var(--linea); background: #fff; }
+  .num input { width: 100%; border: 0; padding: 7px 8px; font-size: 13px; color: var(--tinta); background: transparent; min-width: 0; }
+  .num em { font-style: normal; font-size: 11px; color: var(--suave); padding-right: 8px; }
+  .fila { display: flex; gap: 6px; margin-top: 8px; }
+  .fila > * { flex: 1; }
+  .fila .num { flex: 2; }
+  button.ancho { width: 100%; margin-top: 10px; padding: 10px; font-weight: 600; }
+  button.fuerte { background: var(--acento); border-color: var(--acento); color: #fff; }
+  button.peligro { color: var(--peligro); }
+  .tramos { display: flex; flex-direction: column; gap: 6px; }
+  .tramo { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center; padding: 8px 10px; background: #fff; border: 1px solid var(--linea); font-size: 13px; }
+  .tramo span { color: var(--suave); font-size: 12px; }
+  .tramo.aviso { border-left: 3px solid #e0a000; }
+  .tramo.mal { border-left: 3px solid var(--peligro); }
+  .tramo .mini { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 4px; }
+  .tramo .mini button { padding: 4px 8px; font-size: 12px; }
+  .nota { font-size: 12px; color: var(--suave); line-height: 1.45; margin: 8px 0 0; }
+  .hora { display: flex; align-items: center; gap: 12px; }
+  .hora input { flex: 1; accent-color: var(--tinta); }
+  .hora b { font-variant-numeric: tabular-nums; min-width: 44px; }
+
+  #inspector { position: fixed; top: 12px; right: 12px; width: 300px; background: var(--panel); box-shadow: var(--sombra); padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; z-index: 6; }
+  #inspector header { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+  #inspector .x { border: 0; font-size: 20px; padding: 0 4px; background: transparent; }
+
+  #barra { position: fixed; left: 12px; right: 12px; bottom: 12px; height: 52px; display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--panel); box-shadow: var(--sombra); z-index: 5; }
+  #barra .grupo { display: flex; gap: 4px; }
+  #barra .sep { flex: 1; }
+  #barra button { height: 36px; }
+  #btnVR, #btnAR { background: var(--tinta); color: #fff; border-color: var(--tinta); font-weight: 600; padding: 0 14px; }
+  #fps { font-size: 11px; color: var(--suave); font-variant-numeric: tabular-nums; min-width: 120px; text-align: right; }
+  #btnPanel { display: none; }
+  #aviso { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); background: var(--tinta); color: #fff; padding: 10px 16px; font-size: 13px; z-index: 20; }
+
+  @media (max-width: 760px) {
+    #panel { top: auto; left: 0; right: 0; bottom: 64px; width: auto; height: 46vh; transform: translateY(calc(100% - 44px)); transition: transform .25s; }
+    body.panel-abierto #panel { transform: none; }
+    #panel > header { display: none; }
+    #inspector { left: 8px; right: 8px; width: auto; top: 8px; }
+    #barra { left: 0; right: 0; bottom: 0; height: 64px; overflow-x: auto; padding-bottom: env(safe-area-inset-bottom); }
+    #btnPanel { display: block; }
+    #fps { display: none; }
+    .muestras { grid-template-columns: repeat(4, 1fr); }
+  }
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+</head>
+<body>
+<canvas id="lienzo"></canvas>
+
+<aside id="panel">
+  <header><h1>Cocina XR</h1><small>prototipo · sin precios</small></header>
+  <nav id="pestanas">
+    <button data-p="espacio">Espacio</button>
+    <button data-p="estilo">Estilo</button>
+    <button data-p="electro">Electro</button>
+    <button data-p="luz">Luz</button>
+  </nav>
+  <div id="panelCuerpo"></div>
+</aside>
+
+<section id="inspector" hidden></section>
+
+<footer id="barra">
+  <button id="btnPanel">Opciones</button>
+  <div class="grupo">
+    <button data-vista="general">General</button>
+    <button data-vista="dentro">Dentro</button>
+    <button data-vista="detalle">Detalle</button>
+    <button data-vista="planta">Planta</button>
+    <button data-vista="paseo" title="WASD para andar, Esc para salir">Paseo</button>
+  </div>
+  <div class="grupo">
+    <button id="btnDeshacer" title="Ctrl+Z">Deshacer</button>
+    <button id="btnRehacer" title="Ctrl+Y">Rehacer</button>
+  </div>
+  <span class="sep"></span>
+  <span id="fps"></span>
+  <button id="btnVR" disabled title="Necesita unas gafas con WebXR (Quest)">Entrar en RV</button>
+  <button id="btnAR" disabled title="Realidad mixta: ves tu cocina real con la nueva encima">Entrar en RM</button>
+</footer>
+
+<input id="abrir" type="file" accept=".json,application/json" hidden>
+<div id="aviso" hidden></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
