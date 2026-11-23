@@ -400,10 +400,11 @@ function renderFrame() {
 }
 renderer.setAnimationLoop((t, frame) => {
   const dt = Math.min(0.05, reloj.getDelta());
-  if (frame) xr.porFrame(frame, dt);
-  else { moverPaseo(dt); if (orbit.enabled) orbit.update(); recortar(); }
+  // los focos se recolocan ANTES de XR: la maqueta compensa su intensidad por escala en xr.porFrame
   focosT += dt;
   if (focosT > 0.3) { focosT = 0; luces.actualizarFocos(mundo.worldToLocal(camera.getWorldPosition(new THREE.Vector3()))); }
+  if (frame) xr.porFrame(frame, dt);
+  else { moverPaseo(dt); if (orbit.enabled) orbit.update(); recortar(); }
   // con el plano abierto la escena queda tapada: no se dibuja
   if (plano.abierto && !frame) return;
   renderFrame();
